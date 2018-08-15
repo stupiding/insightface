@@ -136,7 +136,7 @@ def get_symbol(args, arg_params, aux_params):
   margin_symbols = []
   if args.network[0] == 'c':
       embedding = fcru.get_symbol(args.emb_size, fc_type = args.version_output)
-  if args.network[0]=='d':
+  elif args.network[0]=='d':
     embedding = fdensenet.get_symbol(args.emb_size, args.num_layers,
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit)
