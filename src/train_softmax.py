@@ -23,10 +23,12 @@ import fresnet
 import finception_resnet_v2
 import fmobilenet 
 import fmobilenetv2
+import fmnasnet
 import fmobilefacenet
 import fxception
 import fdensenet
 import fdpn
+import fcru
 import fnasnet
 import spherenet
 import verification
@@ -132,6 +134,8 @@ def get_symbol(args, arg_params, aux_params):
   data_shape = (args.image_channel,args.image_h,args.image_w)
   image_shape = ",".join([str(x) for x in data_shape])
   margin_symbols = []
+  if args.network[0] == 'c':
+      embedding = fcru.get_symbol(args.emb_size, version_output = args.version_output)
   if args.network[0]=='d':
     embedding = fdensenet.get_symbol(args.emb_size, args.num_layers,
         version_se=args.version_se, version_input=args.version_input, 
@@ -142,8 +146,10 @@ def get_symbol(args, arg_params, aux_params):
       embedding = fmobilenet.get_symbol(args.emb_size, 
           version_se=args.version_se, version_input=args.version_input, 
           version_output=args.version_output, version_unit=args.version_unit)
-    else:
+    elif args.num_layers == 2:
       embedding = fmobilenetv2.get_symbol(args.emb_size)
+    elif args.num_layers == 3:
+      embedding = fmnasnet.get_symbol(args.emb_size, version_outout = args.version_output)
   elif args.network[0]=='i':
     print('init inception-resnet-v2', args.num_layers)
     embedding = finception_resnet_v2.get_symbol(args.emb_size,

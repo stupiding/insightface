@@ -72,6 +72,12 @@ def get_fc1(last_conv, num_classes, fc_type):
     conv_6_dw = Linear(last_conv, num_filter=512, num_group=512, kernel=(7,7), pad=(0, 0), stride=(1, 1), name="conv_6dw7_7")  
     conv_6_f = mx.sym.FullyConnected(data=conv_6_dw, num_hidden=num_classes, name='pre_fc1')
     fc1 = mx.sym.BatchNorm(data=conv_6_f, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='fc1')
+  elif fc_type=="GSC": #mobilefacenet_v1
+    conv_6_pr = mx.sym.Reshape(data = last_conv, target_shape = (64, 1, 7 *512, 7))
+    conv_6_dw = Linear(conv_6_pr, num_filter=1, num_group=1, kernel=(7,7), pad=(0, 0), stride=(7, 7), name="conv_6dw7_7")
+    conv_6_af = mx.sym.Reshape(data = conv_6_dw, target_shape = (64, 512, 1, 1))
+    conv_6_f = mx.sym.FullyConnected(data=conv_6_af, num_hidden=num_classes, name='pre_fc1')
+    fc1 = mx.sym.BatchNorm(data=conv_6_f, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='fc1')
   elif fc_type=='F':
     body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn1')
     body = mx.symbol.Dropout(data=body, p=0.4)

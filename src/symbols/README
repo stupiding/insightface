@@ -1,0 +1,66 @@
+This package contains code for defining CRU-Net. 
+(It's a preliminary version.)
+
+
+FAQ:
+
+- If you are encountering "out of memory" errors, please consider using "MXNet Memory Monger".
+
+  link: https://github.com/dmlc/mxnet-memonger
+
+
+- Here, I provide the data iterator for your convenience, for more details please refer to the paper.
+    
+    mean_r = 124
+    mean_g = 117
+    mean_b = 104
+
+    train = mx.io.ImageRecordIter(
+        data_name           = 'data',
+        label_name          = 'softmax_label',
+        # ------------------------------------
+        path_imgrec         = os.path.join(args.data_dir, "train.rec"),
+        aug_seq             = 'aug_torch',
+        label_width         = 1,
+        data_shape          = (3, 224, 224)
+        force2color         = True,
+        preprocess_threads  = 15,
+        verbose             = True,
+        num_parts           = 1,
+        part_index          = 0,
+        shuffle             = True,
+        shuffle_chunk_size  = 1024,
+        shuffle_chunk_seed  = host_id,
+        # ------------------------------------
+        batch_size          = args.batch_size,
+        # ------------------------------------
+        rand_mirror         = True,
+        mean_r              = mean_r,
+        mean_g              = mean_g,
+        mean_b              = mean_b,
+        scale               = 0.0167,
+        seed                = host_id,
+        # ------------------------------------   
+        rand_crop           = True,
+        min_aspect_ratio    = 0.7500,
+        max_aspect_ratio    = 1.3333,
+        min_random_area     = 0.08, 
+        max_random_area     = 1.0, 
+        random_h            = 20,
+        random_s            = 40,
+        random_l            = 50,
+        fill_value          = (mean_r, mean_g, mean_b), 
+        inter_method        = 2    # 1-bilinear 2-cubic
+        )
+
+
+- For fine-tuning purpose, it's totally fine to use your own data iterator.
+
+
+- I wrote a `ChannelwiseConvolution` layer for accelerating the channel-wise convolution.
+  If you do not want to use this layer, simply replace `ChannelwiseConvolution` with `Convolution`. (*-symbol.json,*.py)
+
+
+
+
+
