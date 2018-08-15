@@ -54,7 +54,7 @@ def get_before_pool(data):
   return conv5_x_x
   
 
-def get_symbol(num_classes = 1000, fc_type):
+def get_symbol(num_classes = 1000, fc_type = 'E'):
   data = mx.sym.Variable(name='data')
   data = data-127.5
   data = data*0.0078125

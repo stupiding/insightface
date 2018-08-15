@@ -135,7 +135,7 @@ def get_symbol(args, arg_params, aux_params):
   image_shape = ",".join([str(x) for x in data_shape])
   margin_symbols = []
   if args.network[0] == 'c':
-      embedding = fcru.get_symbol(args.emb_size, version_output = args.version_output)
+      embedding = fcru.get_symbol(args.emb_size, fc_type = args.version_output)
   if args.network[0]=='d':
     embedding = fdensenet.get_symbol(args.emb_size, args.num_layers,
         version_se=args.version_se, version_input=args.version_input, 
@@ -149,7 +149,7 @@ def get_symbol(args, arg_params, aux_params):
     elif args.num_layers == 2:
       embedding = fmobilenetv2.get_symbol(args.emb_size)
     elif args.num_layers == 3:
-      embedding = fmnasnet.get_symbol(args.emb_size, version_outout = args.version_output)
+      embedding = fmnasnet.get_symbol(args.emb_size, fc_type = args.version_output)
   elif args.network[0]=='i':
     print('init inception-resnet-v2', args.num_layers)
     embedding = finception_resnet_v2.get_symbol(args.emb_size,
