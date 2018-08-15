@@ -22,7 +22,8 @@ def Conv(data, num_filter, kernel, stride=(1,1), pad=(0, 0), name=None, no_bias=
     Convolution = mx.symbol.Convolution
 
     if acc and num_group==num_filter:
-        Convolution = mx.symbol.ChannelwiseConvolution
+        #Convolution = mx.symbol.ChannelwiseConvolution
+        Convolution = mx.symbol.Convolution
 
     if w is None:
         conv     = Convolution(data=data, num_filter=num_filter, num_group=num_group, kernel=kernel, pad=pad, stride=stride, name=('%s__conv' %name), no_bias=no_bias, attr=attr)
