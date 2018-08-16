@@ -100,6 +100,7 @@ def parse_args():
   parser.add_argument('--version-output', type=str, default='E', help='network embedding output config')
   parser.add_argument('--version-unit', type=int, default=3, help='resnet unit config')
   parser.add_argument('--version-act', type=str, default='prelu', help='network activation config')
+  parser.add_argument('--pyramid-alpha', type=int, default=0, help='0 for resnet, otherwise for pyramid alpha')
   parser.add_argument('--use-deformable', type=int, default=0, help='use deformable cnn in network')
   parser.add_argument('--lr', type=float, default=0.1, help='start learning rate')
   parser.add_argument('--lr-steps', type=str, default='', help='steps of lr changing')
