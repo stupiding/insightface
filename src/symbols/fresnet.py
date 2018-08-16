@@ -510,6 +510,7 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
     fc_type = version_output
     version_unit = kwargs.get('version_unit', 3)
     act_type = kwargs.get('version_act', 'prelu')
+    pyramid_alpha = kwargs.get('pyramid_alpha', 0)
     print(version_se, version_input, version_output, version_unit, act_type)
     num_unit = len(units)
     assert(num_unit == num_stages)
@@ -544,8 +545,8 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
       else:
         body = residual_unit(body, filter_list[i+1], (2, 2), False,
           name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
-      for j in range(units[i]-1):
-        body = residual_unit(body, filter_list[i+1], (1,1), True, name='stage%d_unit%d' % (i+1, j+2),
+      for j in range(1, units[i]):
+        body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
           bottle_neck=bottle_neck, **kwargs)
 
     fc1 = symbol_utils.get_fc1(body, num_classes, fc_type)
@@ -587,6 +588,13 @@ def get_symbol(num_classes, num_layers, **kwargs):
         units = [3, 30, 48, 8]
     else:
         raise ValueError("no experiments done on num_layers {}, you can do it yourself".format(num_layers))
+
+    pyramid_alpha = kwargs.get('pyramid_alpha', 0)
+    if pyramid_alpha > 0:
+        first_stage = 64
+        pyramid_alpha = int(np.ceil(pyramid_alpha // sum(units) / 32.) * 32)
+        kwags['pyramid_alpha'] = pyramid_alpha
+        filter_list = [first_stage] + [first_stage + sum(units[:stage] + 1) * pyramid_alpha for stage in range(4)]
 
     return resnet(units       = units,
                   num_stages  = num_stages,

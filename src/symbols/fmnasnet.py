@@ -12,6 +12,7 @@ def ConvBlock(channels, kernel_size, strides, **kwargs):
             nn.Conv2D(channels, kernel_size, strides=strides, padding=1, use_bias=False),
             nn.BatchNorm(scale=True),
             nn.Activation('relu')
+            #nn.PReLU()
         )
     return out
 
@@ -24,6 +25,7 @@ def Conv1x1(channels, is_linear=False, **kwargs):
         )
         if not is_linear:
             out.add(nn.Activation('relu'))
+            #out.add(nn.PReLU())
     return out
 
 def DWise(channels, strides, kernel_size=3, **kwargs):
@@ -33,6 +35,7 @@ def DWise(channels, strides, kernel_size=3, **kwargs):
             nn.Conv2D(channels, kernel_size, strides=strides, padding=kernel_size // 2, groups=channels, use_bias=False),
             nn.BatchNorm(scale=True),
             nn.Activation('relu')
+            #nn.PReLU()
         )
     return out
 
@@ -53,13 +56,15 @@ class SepCONV(nn.HybridBlock):
                     nn.Conv2D(in_channels=inp, channels=cn, groups=inp, kernel_size=kernel_size, strides=(1,1), padding=kernel_size // 2
                         , use_bias=False),
                     nn.BatchNorm(),
-                    nn.Activation('relu'),
+                    #nn.Activation('relu'),
+		    nn.PReLU(),
                     nn.Conv2D(in_channels=cn, channels=output, kernel_size=(1,1), strides=(1,1)
                         , use_bias=not with_bn)
                 )
 
             self.with_bn = with_bn
             self.act = nn.Activation('relu')
+            #self.act = nn.PReLU()
             if with_bn:
                 self.bn = nn.BatchNorm()
     def hybrid_forward(self, F ,x):
