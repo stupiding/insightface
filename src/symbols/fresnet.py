@@ -31,6 +31,15 @@ import numpy as np
 import symbol_utils
 import sklearn
 
+def ibn_block(data, name, eps=2e-5, bn_mom=0.9):
+    split = mx.symbol.split(data=data, axis=1, num_outputs=2)
+    # import pdb
+    # pdb.set_trace()
+    out1 = mx.symbol.InstanceNorm(data=split[0], eps=eps, name=name + '_in1')
+    out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1')
+    out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_ibn1')
+    return out
+
 def Conv(**kwargs):
     #name = kwargs.get('name')
     #_weight = mx.symbol.Variable(name+'_weight')
@@ -331,13 +340,20 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
         Workspace used in convolution operator
     """
     use_se = kwargs.get('version_se', 1)
+    use_ibn = kwargs.get('version_ibn', 1)
     bn_mom = kwargs.get('bn_mom', 0.9)
     workspace = kwargs.get('workspace', 256)
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
     #print('in unit3')
     if bottle_neck:
-        bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+        if num_filter == 2048:
+            use_ibn = 0
+
+        if use_ibn:
+            bn1 = ibn_block(data=data, name=name)
+        else:
+            bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
         conv1 = Conv(data=bn1, num_filter=int(num_filter*0.25), kernel=(1,1), stride=(1,1), pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
         bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')

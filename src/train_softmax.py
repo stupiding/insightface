@@ -96,6 +96,7 @@ def parse_args():
   parser.add_argument('--end-epoch', type=int, default=100000, help='training epoch size.')
   parser.add_argument('--network', default='r50', help='specify network')
   parser.add_argument('--version-se', type=int, default=0, help='whether to use se in network')
+  parser.add_argument('--version-ibn', type=int, default=0, help='whether to use IBN in resnet')
   parser.add_argument('--version-input', type=int, default=1, help='network input config')
   parser.add_argument('--version-output', type=str, default='E', help='network embedding output config')
   parser.add_argument('--version-unit', type=int, default=3, help='resnet unit config')
