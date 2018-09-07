@@ -31,6 +31,19 @@ import numpy as np
 import symbol_utils
 import sklearn
 
+def bn_block(data, fix_gamma, eps=2e-5, bn_mom=0.9, name='bn', method='bn'):
+    if method is 'bn':
+        out = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn')
+    elif method is 'row':
+        row_data = mx.sym.transpose(data, axes=(0, 2, 1, 3))
+        bn_out = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_rowbn')
+        out = mx.sym.transpose(bn_out, axes=(0, 2, 1, 3))
+    elif method is 'col':
+        row_data = mx.sym.transpose(data, axes=(0, 3, 2, 1))
+        bn_out = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_colbn')
+        out = mx.sym.transpose(bn_out, axes=(0, 3, 2, 1))
+    return out
+
 def ibn_block(data, name, eps=2e-5, bn_mom=0.9):
     split = mx.symbol.split(data=data, axis=1, num_outputs=2)
     # import pdb
@@ -80,6 +93,7 @@ def residual_unit_v1(data, num_filter, stride, dim_match, name, bottle_neck, **k
     workspace = kwargs.get('workspace', 256)
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
+    version_bn = kwargs.get('version_bn', 'bn')
     #print('in unit1')
     if bottle_neck:
         conv1 = Conv(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=stride, pad=(0,0),
@@ -118,11 +132,13 @@ def residual_unit_v1(data, num_filter, stride, dim_match, name, bottle_neck, **k
     else:
         conv1 = Conv(data=data, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
-        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
+        #bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
+        bn1 = bn_block(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1', method=version_bn)
         act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
-        bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
+        #bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
+        bn2 = bn_block(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2', method=version_bn)
         if use_se:
           #se begin
           body = mx.sym.Pooling(data=bn2, global_pool=True, kernel=(7, 7), pool_type='avg', name=name+'_se_pool1')
@@ -345,6 +361,7 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
     workspace = kwargs.get('workspace', 256)
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
+    version_bn = kwargs.get('version_bn', 'bn')
     #print('in unit3')
     if bottle_neck:
         if num_filter == 2048:
@@ -388,14 +405,17 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
             shortcut._set_attr(mirror_stage='True')
         return bn4 + shortcut
     else:
-        bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+        #bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+        bn1 = bn_block(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1', method=version_bn)
         conv1 = Conv(data=bn1, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
-        bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
+        #bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
+        bn2 = bn_block(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', method=version_bn)
         act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1')
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
-        bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
+        #bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
+        bn3 = bn_block(data=conv2, fix_gamma=False, eps=2e-5momentum=bn_mom, name=name + '_bn3', method=version_bn)
         if use_se:
           #se begin
           body = mx.sym.Pooling(data=bn3, global_pool=True, kernel=(7, 7), pool_type='avg', name=name+'_se_pool1')
@@ -604,6 +624,9 @@ def get_symbol(num_classes, num_layers, **kwargs):
         units = [3, 30, 48, 8]
     else:
         raise ValueError("no experiments done on num_layers {}, you can do it yourself".format(num_layers))
+    width_mult = kwargs.get('width_mult', 1)
+    print("width_mult:", width_mult)
+    filter_list = [int(c * width_mult) for c in filter_list]
 
     pyramid_alpha = kwargs.get('pyramid_alpha', 0)
     if pyramid_alpha > 0:

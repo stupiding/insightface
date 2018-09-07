@@ -95,12 +95,14 @@ def parse_args():
   parser.add_argument('--max-steps', type=int, default=0, help='max training batches')
   parser.add_argument('--end-epoch', type=int, default=100000, help='training epoch size.')
   parser.add_argument('--network', default='r50', help='specify network')
+  parser.add_argument('--width-mult', type=float, default=1, help="width-mult")
   parser.add_argument('--version-se', type=int, default=0, help='whether to use se in network')
   parser.add_argument('--version-ibn', type=int, default=0, help='whether to use IBN in resnet')
   parser.add_argument('--version-input', type=int, default=1, help='network input config')
   parser.add_argument('--version-output', type=str, default='E', help='network embedding output config')
   parser.add_argument('--version-unit', type=int, default=3, help='resnet unit config')
   parser.add_argument('--version-act', type=str, default='prelu', help='network activation config')
+  parser.add_argument('--version-bn', default='bn', help='version of bn: bn, row, col')
   parser.add_argument('--pyramid-alpha', type=int, default=0, help='0 for resnet, otherwise for pyramid alpha')
   parser.add_argument('--use-deformable', type=int, default=0, help='use deformable cnn in network')
   parser.add_argument('--lr', type=float, default=0.1, help='start learning rate')
@@ -181,7 +183,7 @@ def get_symbol(args, arg_params, aux_params):
     embedding = fresnet.get_symbol(args.emb_size, args.num_layers, 
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit,
-        version_act=args.version_act)
+        version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn)
   all_label = mx.symbol.Variable('softmax_label')
   gt_label = all_label
   extra_loss = None
@@ -381,7 +383,7 @@ def train_net(args):
       initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
     _rescale = 1.0/args.ctx_num
     opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
-    som = 20
+    som = 200
     _cb = mx.callback.Speedometer(args.batch_size, som)
 
     ver_list = []
@@ -434,7 +436,7 @@ def train_net(args):
           break
 
       _cb(param)
-      if mbatch%1000==0:
+      if mbatch%10000==0:
         print('lr-batch-epoch:',opt.lr,param.nbatch,param.epoch)
 
       if mbatch>=0 and mbatch%args.verbose==0:
