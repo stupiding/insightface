@@ -32,15 +32,15 @@ import symbol_utils
 import sklearn
 
 def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn'):
-    if method is 'bn':
+    if method == 'bn':
         out = mx.sym.BatchNorm(data=data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_bn')
-    elif method is 'row':
+    elif method == 'row':
         row_data = mx.sym.transpose(data, axes=(0, 2, 1, 3))
         bn_out = mx.sym.BatchNorm(data=row_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_rowbn')
         out = mx.sym.transpose(bn_out, axes=(0, 2, 1, 3))
-    elif method is 'col':
+    elif method == 'col':
         row_data = mx.sym.transpose(data, axes=(0, 3, 2, 1))
-        bn_out = mx.sym.BatchNorm(data=col_data,fix_gamma=False, eps=eps, momentum=momentum, name=name + '_colbn')
+        bn_out = mx.sym.BatchNorm(data=col_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_colbn')
         out = mx.sym.transpose(bn_out, axes=(0, 3, 2, 1))
     return out
 
