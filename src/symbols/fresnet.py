@@ -415,7 +415,7 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
         #bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
-        bn3 = bn_block(data=conv2, fix_gamma=False, eps=2e-5momentum=bn_mom, name=name + '_bn3', method=version_bn)
+        bn3 = bn_block(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3', method=version_bn)
         if use_se:
           #se begin
           body = mx.sym.Pooling(data=bn3, global_pool=True, kernel=(7, 7), pool_type='avg', name=name+'_se_pool1')
