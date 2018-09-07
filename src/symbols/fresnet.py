@@ -33,15 +33,29 @@ import sklearn
 
 def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn'):
     if method == 'bn':
-        out = mx.sym.BatchNorm(data=data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_bn')
+        out = mx.sym.BatchNorm(data=data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/bn')
+    elif method == 'in':
+        out = mx.sym.InstanceNorm(data=data, eps=eps, name=name + '/in')
     elif method == 'row':
         row_data = mx.sym.transpose(data, axes=(0, 2, 1, 3))
-        bn_out = mx.sym.BatchNorm(data=row_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_rowbn')
+        bn_out = mx.sym.BatchNorm(data=row_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/rowbn')
         out = mx.sym.transpose(bn_out, axes=(0, 2, 1, 3))
     elif method == 'col':
         row_data = mx.sym.transpose(data, axes=(0, 3, 2, 1))
-        bn_out = mx.sym.BatchNorm(data=col_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_colbn')
+        bn_out = mx.sym.BatchNorm(data=col_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/colbn')
         out = mx.sym.transpose(bn_out, axes=(0, 3, 2, 1))
+    elif method == 'ibn':
+        split = mx.symbol.split(data=data, axis=1, num_outputs=2)
+        out1 = mx.symbol.InstanceNorm(data=split[0], eps=eps, name=name + '_ibn/in')
+        out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_ibn/bn')
+        out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_ibn')
+    elif method == 'rbn':
+        split = mx.symbol.split(data=data, axis=1, num_outputs=2)
+        row_data = mx.sym.transpose(split[0], axes=(0, 2, 1, 3))
+        bn_out = mx.sym.BatchNorm(data=row_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_rbn/rowbn')
+        out1 = mx.sym.transpose(bn_out, axes=(0, 2, 1, 3))
+        out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_rbn/bn')
+        out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_rbn')
     return out
 
 def ibn_block(data, name, eps=2e-5, bn_mom=0.9):
