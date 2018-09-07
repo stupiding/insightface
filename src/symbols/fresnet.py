@@ -561,6 +561,7 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
     version_unit = kwargs.get('version_unit', 3)
     act_type = kwargs.get('version_act', 'prelu')
     pyramid_alpha = kwargs.get('pyramid_alpha', 0)
+    stride_in_res = kwargs.get('stride_in_res', True)
     print(version_se, version_input, version_output, version_unit, act_type)
     num_unit = len(units)
     assert(num_unit == num_stages)
@@ -589,15 +590,24 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
       body = Act(data=body, act_type=act_type, name='relu0')
 
     for i in range(num_stages):
-      if version_input==0:
-        body = residual_unit(body, filter_list[i+1], (1 if i==0 else 2, 1 if i==0 else 2), False,
-                             name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
+      if stride_in_res:
+        if version_input==0:
+          body = residual_unit(body, filter_list[i+1], (1 if i==0 else 2, 1 if i==0 else 2), False,
+                               name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
+        else:
+          body = residual_unit(body, filter_list[i+1], (2, 2), False,
+                               name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
+        for j in range(1, units[i]):
+          body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
+            bottle_neck=bottle_neck, **kwargs)
       else:
-        body = residual_unit(body, filter_list[i+1], (2, 2), False,
-          name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
-      for j in range(1, units[i]):
-        body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
-          bottle_neck=bottle_neck, **kwargs)
+        stride = (1, 1) if (version_input == 0 and i==0) else (2, 2)
+        body = Conv(body, num_filter=filter_list[i+1], kernel=(3,3), stride=stride, pad=(1,1),
+                    no_bias=True, name='stage%d_unit%d' % (i + 1, 0), workspace=workspac)
+        for j in range(0, units[i]):
+          body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
+            bottle_neck=bottle_neck, **kwargs)
+ 
 
     fc1 = symbol_utils.get_fc1(body, num_classes, fc_type)
     return fc1
@@ -616,12 +626,18 @@ def get_symbol(num_classes, num_layers, **kwargs):
     num_stages = 4
     if num_layers == 18:
         units = [2, 2, 2, 2]
+    elif num_layers == 20:
+        units = [1, 2, 4, 1]
     elif num_layers == 34:
         units = [3, 4, 6, 3]
+    elif num_layers == 36:
+        units = [2, 4, 8, 2]
     elif num_layers == 49:
         units = [3, 4, 14, 3]
     elif num_layers == 50:
         units = [3, 4, 14, 3]
+    elif num_layers == 64:
+        units = [3, 8, 16, 3]
     elif num_layers == 74:
         units = [3, 6, 24, 3]
     elif num_layers == 90:
@@ -638,8 +654,10 @@ def get_symbol(num_classes, num_layers, **kwargs):
         units = [3, 30, 48, 8]
     else:
         raise ValueError("no experiments done on num_layers {}, you can do it yourself".format(num_layers))
+
+    if num_layers in [20, 36, 64]:
+        kwargs['stride_in_res'] = False
     width_mult = kwargs.get('width_mult', 1)
-    print("width_mult:", width_mult)
     filter_list = [int(c * width_mult) for c in filter_list]
 
     pyramid_alpha = kwargs.get('pyramid_alpha', 0)
