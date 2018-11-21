@@ -27,41 +27,46 @@ logger = logging.getLogger()
 class FaceImageIter(io.DataIter):
 
     def __init__(self, batch_size, data_shape,
-                 path_imgrec = None,
+                 path_imgrecs = None,
                  shuffle=False, aug_list=None, mean = None,
                  rand_mirror = False, cutoff = 0,
                  data_name='data', label_name='softmax_label', **kwargs):
         super(FaceImageIter, self).__init__()
-        assert path_imgrec
-        if path_imgrec:
-            logging.info('loading recordio %s...',
-                         path_imgrec)
-            path_imgidx = path_imgrec[0:-4]+".idx"
-            self.imgrec = recordio.MXIndexedRecordIO(path_imgidx, path_imgrec, 'r')  # pylint: disable=redefined-variable-type
-            s = self.imgrec.read_idx(0)
-            header, _ = recordio.unpack(s)
-            if header.flag>0:
-              print('header0 label', header.label)
-              self.header0 = (int(header.label[0]), int(header.label[1]))
-              #assert(header.flag==1)
-              self.imgidx = range(1, int(header.label[0]))
-              self.id2range = {}
-              self.seq_identity = range(int(header.label[0]), int(header.label[1]))
-              for identity in self.seq_identity:
-                s = self.imgrec.read_idx(identity)
+        assert path_imgrecs
+        if path_imgrecs:
+            self.rec_num = len(path_imgrecs)
+            self.seq, self.oseq = [], []
+            self.imgrec, self.header0, self.imgidx, self.id2range, self.seq_identity = [], [], [], [], []
+            for path_imgrec in path_imgrecs:
+                logging.info('loading recordio %s...',
+                             path_imgrec)
+                path_imgidx = path_imgrec[0:-4]+".idx"
+                self.imgrec.append( recordio.MXIndexedRecordIO(path_imgidx, path_imgrec, 'r'))  # pylint: disable=redefined-variable-type
+                s = self.imgrec[-1].read_idx(0)
                 header, _ = recordio.unpack(s)
-                a,b = int(header.label[0]), int(header.label[1])
-                self.id2range[identity] = (a,b)
-                count = b-a
-              print('id2range', len(self.id2range))
-            else:
-              self.imgidx = list(self.imgrec.keys)
-            if shuffle:
-              self.seq = self.imgidx
-              self.oseq = self.imgidx
-              print(len(self.seq))
-            else:
-              self.seq = None
+                if header.flag>0:
+                  print('header0 label', header.label)
+                  self.header0.append( (int(header.label[0]), int(header.label[1])))
+                  #assert(header.flag==1)
+                  self.imgidx.append(range(1, int(header.label[0])))
+                  self.id2range.append( {} )
+                  self.seq_identity.append(range(int(header.label[0]), int(header.label[1])))
+                  for identity in self.seq_identity[-1]:
+                    s = self.imgrec[-1].read_idx(identity)
+                    header, _ = recordio.unpack(s)
+                    a,b = int(header.label[0]), int(header.label[1])
+                    self.id2range[-1][identity] = (a,b)
+                    count = b-a
+                  print('id2range', len(self.id2range[-1]))
+                else:
+                  self.imgidx.append(list(self.imgrec[-1].keys))
+
+                if shuffle:
+                  self.seq.append(self.imgidx[-1])
+                  self.oseq.append(self.imgidx[-1])
+                  print(len(self.seq[-1]))
+                else:
+                  self.seq.append(None)
 
         self.mean = mean
         self.nd_mean = None
@@ -78,9 +83,9 @@ class FaceImageIter(io.DataIter):
         self.rand_mirror = rand_mirror
         print('rand_mirror', rand_mirror)
         self.cutoff = cutoff
-        self.provide_label = [(label_name, (batch_size,))]
+        self.provide_label = [(label_name, (batch_size, self.rec_num))]
         #print(self.provide_label[0][1])
-        self.cur = 0
+        self.cur = [0] * len(path_imgrecs)
         self.nbatch = 0
         self.is_init = False
 
@@ -88,36 +93,38 @@ class FaceImageIter(io.DataIter):
     def reset(self):
         """Resets the iterator to the beginning of the data."""
         print('call reset()')
-        self.cur = 0
+        self.cur = [0] * self.rec_num
         if self.shuffle:
-          random.shuffle(self.seq)
-        if self.seq is None and self.imgrec is not None:
-            self.imgrec.reset()
+          for i in range(self.rec_num):
+            random.shuffle(self.seq[i])
+        for i in range(self.rec_num):
+          if self.seq[i] is None and self.imgrec[i] is not None:
+              self.imgrec[i].reset()
 
-    def num_samples(self):
-      return len(self.seq)
+    def num_samples(self, data_idx):
+      return len(self.seq[data_idx])
 
-    def next_sample(self):
+    def next_sample(self, data_idx):
         """Helper function for reading in next sample."""
         #set total batch size, for example, 1800, and maximum size for each people, for example 45
-        if self.seq is not None:
+        if self.seq[data_idx] is not None:
           while True:
-            if self.cur >= len(self.seq):
+            if self.cur[data_idx] >= len(self.seq[data_idx]):
                 raise StopIteration
-            idx = self.seq[self.cur]
-            self.cur += 1
-            if self.imgrec is not None:
-              s = self.imgrec.read_idx(idx)
+            idx = self.seq[data_idx][self.cur[data_idx]]
+            self.cur[data_idx] += 1
+            if self.imgrec[data_idx] is not None:
+              s = self.imgrec[data_idx].read_idx(idx)
               header, img = recordio.unpack(s)
               label = header.label
               if not isinstance(label, numbers.Number):
                 label = label[0]
               return label, img, None, None
             else:
-              label, fname, bbox, landmark = self.imglist[idx]
+              label, fname, bbox, landmark = self.imglist[data_idx][idx]
               return label, self.read_image(fname), bbox, landmark
         else:
-            s = self.imgrec.read()
+            s = self.imgrec[data_idx].read()
             if s is None:
                 raise StopIteration
             header, img = recordio.unpack(s)
@@ -178,8 +185,15 @@ class FaceImageIter(io.DataIter):
           batch_label = nd.empty(self.provide_label[0][1])
         i = 0
         try:
+            data_idx = 0
             while i < batch_size:
-                label, s, bbox, landmark = self.next_sample()
+                _label, s, bbox, landmark = self.next_sample(data_idx)
+                if(len(self.seq) > 1):
+                  label = np.ones([self.rec_num,]) * (-1)
+                  label[data_idx] = _label
+                else:
+                  label = _label
+                data_idx = (data_idx + 1) % self.rec_num
                 _data = self.imdecode(s)
                 if self.rand_mirror:
                   _rd = random.randint(0,1)
@@ -218,7 +232,6 @@ class FaceImageIter(io.DataIter):
         except StopIteration:
             if i<batch_size:
                 raise StopIteration
-
         return io.DataBatch([batch_data], [batch_label], batch_size - i)
 
     def check_data_shape(self, data_shape):
