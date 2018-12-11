@@ -62,7 +62,7 @@ class AccMetric(mx.metric.EvalMetric):
         pred_label = pred_label.asnumpy().astype('int32').flatten()
         label = label.asnumpy()
         if label.ndim==2:
-            label = label[:,1]
+            label = label[:,0]
         label = label.astype('int32').flatten()
         assert label.shape==pred_label.shape
         pred_label, label = pred_label.flat, label.flat
@@ -396,6 +396,7 @@ def train_net(args):
 
     ver_list = []
     ver_name_list = []
+    """
     for name in args.target.split(','):
       path = os.path.join(data_dir,name+".bin")
       if os.path.exists(path):
@@ -403,6 +404,7 @@ def train_net(args):
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
+    """
 
 
 
