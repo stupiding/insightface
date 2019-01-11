@@ -21,6 +21,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'eval'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'symbols'))
 import fresnet
 import finception_resnet_v2
+import flightcnn
 import fmobilenet 
 import fmobilenetv2
 import fmnasnet
@@ -173,6 +174,10 @@ def get_symbol(args, arg_params, aux_params):
     embedding = fdpn.get_symbol(args.emb_size, args.num_layers,
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit)
+  elif args.network[0]=='l':
+    print('init lightcnn', args.num_layers)
+    embedding = flightcnn.get_symbol(args.emb_size, args.num_layers, bn_mom = args.bn_mom, version_output=args.version_output)
+   elif args.network[0]=='n':
   elif args.network[0]=='n':
     print('init nasnet', args.num_layers)
     embedding = fnasnet.get_symbol(args.emb_size)
@@ -181,7 +186,7 @@ def get_symbol(args, arg_params, aux_params):
     embedding = spherenet.get_symbol(args.emb_size, args.num_layers)
   elif args.network[0]=='y':
     print('init mobilefacenet', args.num_layers)
-    embedding = fmobilefacenet.get_symbol(args.emb_size, bn_mom = args.bn_mom, version_output=args.version_output)
+    embedding = fmobilefacenet.get_symbol(args.emb_size, args.num_layers, bn_mom = args.bn_mom, version_output=args.version_output)
   else:
     print('init resnet', args.num_layers)
     embedding = fresnet.get_symbol(args.emb_size, args.num_layers, shake_drop=args.shake_drop,
