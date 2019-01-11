@@ -99,6 +99,7 @@ def parse_args():
   parser.add_argument('--end-epoch', type=int, default=100000, help='training epoch size.')
   parser.add_argument('--network', default='r50', help='specify network')
   parser.add_argument('--width-mult', type=float, default=1, help="width-mult")
+  parser.add_argument("--shake-drop", default=False, action="store_true" , help="whether use ShakeDrop")
   parser.add_argument('--version-se', type=int, default=0, help='whether to use se in network')
   parser.add_argument('--version-ibn', type=int, default=0, help='whether to use IBN in resnet')
   parser.add_argument('--version-input', type=int, default=1, help='network input config')
@@ -154,12 +155,12 @@ def get_symbol(args, arg_params, aux_params):
           version_se=args.version_se, version_input=args.version_input, 
           version_output=args.version_output, version_unit=args.version_unit)
     elif args.num_layers == 2:
-      embedding = fmobilenetv2.get_symbol(args.emb_size)
+      embedding = fmobilenetv2.get_symbol(args.emb_size, version_output = args.version_output)
     elif args.num_layers == 3:
       embedding = fmnasnet.get_symbol(args.emb_size, fc_type = args.version_output)
   elif args.network[0]=='i':
     print('init inception-resnet-v2', args.num_layers)
-    embedding = finception_resnet_v2.get_symbol(args.emb_size,
+    embedding = finception_resnet_v2.get_symbol(args.emb_size, 
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit)
   elif args.network[0]=='x':
@@ -183,7 +184,7 @@ def get_symbol(args, arg_params, aux_params):
     embedding = fmobilefacenet.get_symbol(args.emb_size, bn_mom = args.bn_mom, version_output=args.version_output)
   else:
     print('init resnet', args.num_layers)
-    embedding = fresnet.get_symbol(args.emb_size, args.num_layers, 
+    embedding = fresnet.get_symbol(args.emb_size, args.num_layers, shake_drop=args.shake_drop,
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit,
         version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn)
@@ -396,7 +397,6 @@ def train_net(args):
 
     ver_list = []
     ver_name_list = []
-    """
     for name in args.target.split(','):
       path = os.path.join(data_dir,name+".bin")
       if os.path.exists(path):
@@ -404,7 +404,6 @@ def train_net(args):
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
-    """
 
 
 

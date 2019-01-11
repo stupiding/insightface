@@ -30,6 +30,7 @@ import mxnet as mx
 import numpy as np
 import symbol_utils
 import sklearn
+from shake_drop import *
 
 def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn'):
     if method == 'bn':
@@ -66,6 +67,10 @@ def ibn_block(data, name, eps=2e-5, bn_mom=0.9):
     out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1')
     out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_ibn1')
     return out
+
+def calc_prob(curr_layer, total_layers, p_l):
+  """Calculates drop prob depending on the current layer."""
+  return 1 - (float(curr_layer) / total_layers) * p_l
 
 def Conv(**kwargs):
     #name = kwargs.get('name')
@@ -376,6 +381,7 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
     version_bn = kwargs.get('version_bn', 'bn')
+    shake_drop = kwargs.get('shake_drop', False)
     #print('in unit3')
     if bottle_neck:
         if num_filter == 2048:
@@ -450,6 +456,13 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
             shortcut = mx.sym.BatchNorm(data=conv1sc, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_sc')
         if memonger:
             shortcut._set_attr(mirror_stage='True')
+
+        if shake_drop:
+          prob = kwargs.get('prob', 1)
+          shake_bn3 = mx.sym.Custom(data=bn3, prob=prob, alpha=[-1, 1], beta=[0, 1], name=name+'_shakedrop', op_type='shakedrop')
+        else:
+          shake_bn3 = bn3  
+
         return bn3 + shortcut
 
 def residual_unit_v3_x(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs):
@@ -589,25 +602,34 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
       body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0')
       body = Act(data=body, act_type=act_type, name='relu0')
 
+    layer_num, p_l = 1, 0.5
+    total_layers = sum(units)
     for i in range(num_stages):
       if stride_in_res:
+        print(layer_num)
+        kwargs['prob'] = calc_prob(layer_num, total_layers, p_l)
         if version_input==0:
           body = residual_unit(body, filter_list[i+1], (1 if i==0 else 2, 1 if i==0 else 2), False,
                                name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
         else:
           body = residual_unit(body, filter_list[i+1], (2, 2), False,
                                name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
+        layer_num += 1
         for j in range(1, units[i]):
+          kwargs['prob'] = calc_prob(layer_num, total_layers, p_l)
           body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
             bottle_neck=bottle_neck, **kwargs)
+          layer_num += 1
       else:
         stride = (1, 1) if (version_input == 0 and i==0) else (2, 2)
         body = Conv(body, num_filter=filter_list[i+1], kernel=(3,3), stride=stride, pad=(1,1),
                     no_bias=True, name='stage%d_unit%d' % (i + 1, 0), workspace=workspac)
         for j in range(0, units[i]):
+          kwargs['prob'] = calc_prob(layer_num, total_layers, p_l)
           body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
             bottle_neck=bottle_neck, **kwargs)
- 
+          layer_num += 1
+    assert layer_num - 1 == total_layers, 'layer_num = %d, total_layers = %d' % (layer_num, total_layers)
 
     fc1 = symbol_utils.get_fc1(body, num_classes, fc_type)
     return fc1
@@ -657,6 +679,7 @@ def get_symbol(num_classes, num_layers, **kwargs):
 
     if num_layers in [20, 36, 64]:
         kwargs['stride_in_res'] = False
+    kwargs['total_layers'] = sum(units)
     width_mult = kwargs.get('width_mult', 1)
     filter_list = [int(c * width_mult) for c in filter_list]
 
