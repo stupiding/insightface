@@ -134,6 +134,8 @@ def parse_args():
   parser.add_argument('--scale', type=float, default=0.9993, help='param for sphere')
   parser.add_argument('--rand-mirror', type=int, default=1, help='if do random mirror in training')
   parser.add_argument('--cutoff', type=int, default=0, help='cut off aug')
+  parser.add_argument('--downsample-back', type=float, default=0.0, help='use downsample data augmentation')
+  parser.add_argument('--motion-blur', type=float, default=0.0, help='motion blur aug')
   parser.add_argument('--target', type=str, default='lfw,cfp_fp,agedb_30', help='verification targets')
   args = parser.parse_args()
   return args
@@ -381,6 +383,8 @@ def train_net(args):
         rand_mirror          = args.rand_mirror,
         mean                 = mean,
         cutoff               = args.cutoff,
+        downsample_back      = args.downsample_back,
+        motion_blur          = args.motion_blur,
     )
 
     if args.loss_type<10:

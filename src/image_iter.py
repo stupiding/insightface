@@ -30,6 +30,7 @@ class FaceImageIter(io.DataIter):
                  path_imgrecs = None,
                  shuffle=False, aug_list=None, mean = None,
                  rand_mirror = False, cutoff = 0,
+                 downsample_back = 0.0, motion_blur = 0.0,
                  data_name='data', label_name='softmax_label', **kwargs):
         super(FaceImageIter, self).__init__()
         assert path_imgrecs
@@ -74,6 +75,9 @@ class FaceImageIter(io.DataIter):
           self.mean = np.array(self.mean, dtype=np.float32).reshape(1,1,3)
           self.nd_mean = mx.nd.array(self.mean).reshape((1,1,3))
 
+        if motion_blur > 0:
+          self.load_motion_kernel()
+
         self.check_data_shape(data_shape)
         self.provide_data = [(data_name, (batch_size,) + data_shape)]
         self.batch_size = batch_size
@@ -83,6 +87,8 @@ class FaceImageIter(io.DataIter):
         self.rand_mirror = rand_mirror
         print('rand_mirror', rand_mirror)
         self.cutoff = cutoff
+        self.downsample_back = downsample_back
+        self.motion_blur = motion_blur
         self.provide_label = [(label_name, (batch_size, self.rec_num))]
         #print(self.provide_label[0][1])
         self.cur = [0] * len(path_imgrecs)
@@ -170,6 +176,31 @@ class FaceImageIter(io.DataIter):
           img[:,:,c] = np.fliplr(img[:,:,c])
       return img
 
+    def load_motion_kernel(self):
+      fs = cv2.FileStorage('resourses/blur_kernels_13.xml', cv2.FILE_STORAGE_READ)
+      kernel_number = int(fs.getNode('kernel_number').real())
+      kernel_size = int(fs.getNode('kernel_size').real())
+      kernel_prefix = fs.getNode('kernel_prefix').string()
+      self.kernels = []
+      for i in range(kernel_number):
+        self.kernels.append(fs.getNode(kernel_prefix + '_' + str(i)).mat())
+      
+    def motion_aug(self, img):
+      if random.random() < self.motion_blur:
+        kernel_index = random.randint(0, len(self.kernels))
+        blurred_img = cv2.filter2D(img, -1, self.kernels[kernel_index])
+        return blurred_img
+      else:
+        return img
+
+    def downsample_aug(self, img):
+      if random.random() < self.downsample_back:
+        sizes = [(size, size) for size in range(32, 112, 16)][::-1]
+        downsample_index = random.randint(0, len(sizes))
+        downsampled_img = cv2.resize(img, sizes[downsample_index])
+        return cv2.resize(downsampled_img, img.shape[:2])
+      else:
+        return img
 
     def next(self):
         if not self.is_init:
@@ -199,6 +230,10 @@ class FaceImageIter(io.DataIter):
                   _rd = random.randint(0,1)
                   if _rd==1:
                     _data = mx.ndarray.flip(data=_data, axis=1)
+                if self.motion_blur > 0:
+                    _data = self.motion_aug(_data)
+                if self.downsample_aug > 0:
+                    _data = self.downsample_aug(_data)
                 if self.nd_mean is not None:
                     _data = _data.astype('float32')
                     _data -= self.nd_mean
@@ -267,6 +302,7 @@ class FaceImageIter(io.DataIter):
         """Transforms input data with specified augmentation."""
         for aug in self.auglist:
             data = [ret for src in data for ret in aug(src)]
+        
         return data
 
     def postprocess_data(self, datum):
