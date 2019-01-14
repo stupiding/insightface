@@ -179,7 +179,6 @@ def get_symbol(args, arg_params, aux_params):
   elif args.network[0]=='l':
     print('init lightcnn', args.num_layers)
     embedding = flightcnn.get_symbol(args.emb_size, args.num_layers, bn_mom = args.bn_mom, version_output=args.version_output)
-   elif args.network[0]=='n':
   elif args.network[0]=='n':
     print('init nasnet', args.num_layers)
     embedding = fnasnet.get_symbol(args.emb_size)
