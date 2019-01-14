@@ -232,7 +232,7 @@ class FaceImageIter(io.DataIter):
                     _data = mx.ndarray.flip(data=_data, axis=1)
                 if self.motion_blur > 0:
                     _data = self.motion_aug(_data)
-                if self.downsample_aug > 0:
+                if self.downsample_back > 0:
                     _data = self.downsample_aug(_data)
                 if self.nd_mean is not None:
                     _data = _data.astype('float32')
