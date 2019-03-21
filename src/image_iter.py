@@ -89,7 +89,8 @@ class FaceImageIter(io.DataIter):
         self.cutoff = cutoff
         self.downsample_back = downsample_back
         self.motion_blur = motion_blur
-        self.provide_label = [(label_name, (batch_size, self.rec_num))]
+        #self.provide_label = [(label_name, (batch_size, self.rec_num))]
+        self.provide_label = [(label_name, (batch_size, self.rec_num))] if self.rec_num > 1 else [(label_name, (batch_size, ))]
         #print(self.provide_label[0][1])
         self.cur = [0] * len(path_imgrecs)
         self.nbatch = 0
