@@ -26,6 +26,7 @@ import fmobilenet
 import fmobilenetv2
 import fmnasnet
 import fmobilefacenet
+import fsmall
 import fxception
 import fdensenet
 import fdpn
@@ -185,6 +186,12 @@ def get_symbol(args, arg_params, aux_params):
   elif args.network[0]=='s':
     print('init spherenet', args.num_layers)
     embedding = spherenet.get_symbol(args.emb_size, args.num_layers)
+  elif args.network[0]=='z':
+    print('init small', args.num_layers)
+    embedding = fsmall.get_symbol(args.emb_size, args.num_layers, shake_drop=args.shake_drop,
+        version_se=args.version_se, version_input=args.version_input, 
+        version_output=args.version_output, version_unit=args.version_unit,
+        version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn)
   elif args.network[0]=='y':
     print('init mobilefacenet', args.num_layers)
     embedding = fmobilefacenet.get_symbol(args.emb_size, args.num_layers, bn_mom = args.bn_mom, version_output=args.version_output)
