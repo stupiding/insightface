@@ -35,6 +35,8 @@ from shake_drop import *
 def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn'):
     if method == 'bn':
         out = mx.sym.BatchNorm(data=data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/bn')
+    elif method == 'sbn':
+        out = mx.contrib.sym.SyncBatchNorm(data=data, fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/bn', key = name + '/bn')
     elif method == 'in':
         out = mx.sym.InstanceNorm(data=data, eps=eps, name=name + '/in')
     elif method == 'row':

@@ -81,7 +81,7 @@ class MobilenetV2(nn.HybridBlock):
         self.b6 = InvertedResidualSequence(6, 6, 3, 2)
         self.b7 = InvertedResidualSequence(6, 7, 1, 1)
 
-        self.last_channels = int(1280*self.w) if self.w > 1.0 else 1280
+        self.last_channels = 512 #int(1280*self.w) if self.w > 1.0 else 1280
         with self.name_scope():
             self.features = nn.HybridSequential()
             with self.features.name_scope():
@@ -95,12 +95,14 @@ class MobilenetV2(nn.HybridBlock):
         #x = self.output(x)
         return x
 
-def get_symbol(num_classes):
+def get_symbol(num_classes, **kwargs):
+  version_output = kwargs.get('version_output', 'E')
+  fc_type = version_output
   net = MobilenetV2(num_classes, 1)
   data = mx.sym.Variable(name='data')
   data = data-127.5
   data = data*0.0078125
   body = net(data)
-  fc1 = symbol_utils.get_fc1(body, num_classes, 'E')
+  fc1 = symbol_utils.get_fc1(body, num_classes, fc_type)
   return fc1
 
