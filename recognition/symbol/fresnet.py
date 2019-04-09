@@ -26,53 +26,14 @@ Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun. "Identity Mappings in Deep Re
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+import sys
+import os
 import mxnet as mx
 import numpy as np
 import symbol_utils
 import sklearn
-from shake_drop import *
-
-def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn'):
-    if method == 'bn':
-        out = mx.sym.BatchNorm(data=data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/bn')
-    elif method == 'sbn':
-        out = mx.contrib.sym.SyncBatchNorm(data=data, fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/bn', key = name + '/bn')
-    elif method == 'in':
-        out = mx.sym.InstanceNorm(data=data, eps=eps, name=name + '/in')
-    elif method == 'row':
-        row_data = mx.sym.transpose(data, axes=(0, 2, 1, 3))
-        bn_out = mx.sym.BatchNorm(data=row_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/rowbn')
-        out = mx.sym.transpose(bn_out, axes=(0, 2, 1, 3))
-    elif method == 'col':
-        row_data = mx.sym.transpose(data, axes=(0, 3, 2, 1))
-        bn_out = mx.sym.BatchNorm(data=col_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/colbn')
-        out = mx.sym.transpose(bn_out, axes=(0, 3, 2, 1))
-    elif method == 'ibn':
-        split = mx.symbol.split(data=data, axis=1, num_outputs=2)
-        out1 = mx.symbol.InstanceNorm(data=split[0], eps=eps, name=name + '_ibn/in')
-        out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_ibn/bn')
-        out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_ibn')
-    elif method == 'rbn':
-        split = mx.symbol.split(data=data, axis=1, num_outputs=2)
-        row_data = mx.sym.transpose(split[0], axes=(0, 2, 1, 3))
-        bn_out = mx.sym.BatchNorm(data=row_data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '_rbn/rowbn')
-        out1 = mx.sym.transpose(bn_out, axes=(0, 2, 1, 3))
-        out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_rbn/bn')
-        out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_rbn')
-    return out
-
-def ibn_block(data, name, eps=2e-5, bn_mom=0.9):
-    split = mx.symbol.split(data=data, axis=1, num_outputs=2)
-    # import pdb
-    # pdb.set_trace()
-    out1 = mx.symbol.InstanceNorm(data=split[0], eps=eps, name=name + '_in1')
-    out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1')
-    out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_ibn1')
-    return out
-
-def calc_prob(curr_layer, total_layers, p_l):
-  """Calculates drop prob depending on the current layer."""
-  return 1 - (float(curr_layer) / total_layers) * p_l
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from config import config
 
 def Conv(**kwargs):
     #name = kwargs.get('name')
@@ -114,7 +75,6 @@ def residual_unit_v1(data, num_filter, stride, dim_match, name, bottle_neck, **k
     workspace = kwargs.get('workspace', 256)
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
-    version_bn = kwargs.get('version_bn', 'bn')
     #print('in unit1')
     if bottle_neck:
         conv1 = Conv(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=stride, pad=(0,0),
@@ -153,13 +113,11 @@ def residual_unit_v1(data, num_filter, stride, dim_match, name, bottle_neck, **k
     else:
         conv1 = Conv(data=data, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
-        #bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
-        bn1 = bn_block(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1', method=version_bn)
+        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
         act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
-        #bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
-        bn2 = bn_block(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2', method=version_bn)
+        bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
         if use_se:
           #se begin
           body = mx.sym.Pooling(data=bn2, global_pool=True, kernel=(7, 7), pool_type='avg', name=name+'_se_pool1')
@@ -377,22 +335,13 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
         Workspace used in convolution operator
     """
     use_se = kwargs.get('version_se', 1)
-    use_ibn = kwargs.get('version_ibn', 1)
     bn_mom = kwargs.get('bn_mom', 0.9)
     workspace = kwargs.get('workspace', 256)
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
-    version_bn = kwargs.get('version_bn', 'bn')
-    shake_drop = kwargs.get('shake_drop', False)
     #print('in unit3')
     if bottle_neck:
-        if num_filter == 2048:
-            use_ibn = 0
-
-        if use_ibn:
-            bn1 = ibn_block(data=data, name=name)
-        else:
-            bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+        bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
         conv1 = Conv(data=bn1, num_filter=int(num_filter*0.25), kernel=(1,1), stride=(1,1), pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
         bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
@@ -427,17 +376,14 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
             shortcut._set_attr(mirror_stage='True')
         return bn4 + shortcut
     else:
-        #bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
-        bn1 = bn_block(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1', method=version_bn)
+        bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
         conv1 = Conv(data=bn1, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
-        #bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
-        bn2 = bn_block(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', method=version_bn)
+        bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
         act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1')
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
-        #bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
-        bn3 = bn_block(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3', method=version_bn)
+        bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
         if use_se:
           #se begin
           body = mx.sym.Pooling(data=bn3, global_pool=True, kernel=(7, 7), pool_type='avg', name=name+'_se_pool1')
@@ -458,13 +404,6 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
             shortcut = mx.sym.BatchNorm(data=conv1sc, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_sc')
         if memonger:
             shortcut._set_attr(mirror_stage='True')
-
-        if shake_drop:
-          prob = kwargs.get('prob', 1)
-          shake_bn3 = mx.sym.Custom(data=bn3, prob=prob, alpha=[-1, 1], beta=[0, 1], name=name+'_shakedrop', op_type='shakedrop')
-        else:
-          shake_bn3 = bn3  
-
         return bn3 + shortcut
 
 def residual_unit_v3_x(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs):
@@ -544,14 +483,19 @@ def residual_unit(data, num_filter, stride, dim_match, name, bottle_neck, **kwar
   elif uv==4:
     return residual_unit_v4(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs)
   else:
-    if version_input<=1:
-      return residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs)
-    else:
-      return residual_unit_v3_x(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs)
+    return residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs)
 
-def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
-    bn_mom = kwargs.get('bn_mom', 0.9)
-    workspace = kwargs.get('workspace', 256)
+def resnet(units, num_stages, filter_list, num_classes, bottle_neck):
+    bn_mom = config.bn_mom
+    workspace = config.workspace
+    kwargs = {'version_se' : config.net_se,
+        'version_input': config.net_input,
+        'version_output': config.net_output,
+        'version_unit': config.net_unit,
+        'version_act': config.net_act,
+        'bn_mom': bn_mom,
+        'workspace': workspace,
+        }
     """Return ResNet symbol of
     Parameters
     ----------
@@ -575,19 +519,20 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
     fc_type = version_output
     version_unit = kwargs.get('version_unit', 3)
     act_type = kwargs.get('version_act', 'prelu')
-    pyramid_alpha = kwargs.get('pyramid_alpha', 0)
-    stride_in_res = kwargs.get('stride_in_res', True)
     print(version_se, version_input, version_output, version_unit, act_type)
     num_unit = len(units)
     assert(num_unit == num_stages)
     data = mx.sym.Variable(name='data')
     if version_input==0:
-      data = mx.sym.BatchNorm(data=data, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='bn_data')
+      #data = mx.sym.BatchNorm(data=data, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='bn_data')
+      data = mx.sym.identity(data=data, name='id')
+      data = data-127.5
+      data = data*0.0078125
       body = Conv(data=data, num_filter=filter_list[0], kernel=(7, 7), stride=(2,2), pad=(3, 3),
                                 no_bias=True, name="conv0", workspace=workspace)
       body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0')
       body = Act(data=body, act_type=act_type, name='relu0')
-      body = mx.sym.Pooling(data=body, kernel=(3, 3), stride=(2,2), pad=(1,1), pool_type='max')
+      #body = mx.sym.Pooling(data=body, kernel=(3, 3), stride=(2,2), pad=(1,1), pool_type='max')
     elif version_input==2:
       data = mx.sym.BatchNorm(data=data, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='bn_data')
       body = Conv(data=data, num_filter=filter_list[0], kernel=(3,3), stride=(1,1), pad=(1,1),
@@ -604,43 +549,29 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
       body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0')
       body = Act(data=body, act_type=act_type, name='relu0')
 
-    layer_num, p_l = 1, 0.5
-    total_layers = sum(units)
     for i in range(num_stages):
-      if stride_in_res:
-        print(layer_num)
-        kwargs['prob'] = calc_prob(layer_num, total_layers, p_l)
-        if version_input==0:
-          body = residual_unit(body, filter_list[i+1], (1 if i==0 else 2, 1 if i==0 else 2), False,
-                               name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
-        else:
-          body = residual_unit(body, filter_list[i+1], (2, 2), False,
-                               name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
-        layer_num += 1
-        for j in range(1, units[i]):
-          kwargs['prob'] = calc_prob(layer_num, total_layers, p_l)
-          body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
-            bottle_neck=bottle_neck, **kwargs)
-          layer_num += 1
-      else:
-        stride = (1, 1) if (version_input == 0 and i==0) else (2, 2)
-        body = Conv(body, num_filter=filter_list[i+1], kernel=(3,3), stride=stride, pad=(1,1),
-                    no_bias=True, name='stage%d_unit%d' % (i + 1, 0), workspace=workspac)
-        for j in range(0, units[i]):
-          kwargs['prob'] = calc_prob(layer_num, total_layers, p_l)
-          body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
-            bottle_neck=bottle_neck, **kwargs)
-          layer_num += 1
-    assert layer_num - 1 == total_layers, 'layer_num = %d, total_layers = %d' % (layer_num, total_layers)
+      #if version_input==0:
+      #  body = residual_unit(body, filter_list[i+1], (1 if i==0 else 2, 1 if i==0 else 2), False,
+      #                       name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
+      #else:
+      #  body = residual_unit(body, filter_list[i+1], (2, 2), False,
+      #    name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
+      body = residual_unit(body, filter_list[i+1], (2, 2), False,
+        name='stage%d_unit%d' % (i + 1, 1), bottle_neck=bottle_neck, **kwargs)
+      for j in range(units[i]-1):
+        body = residual_unit(body, filter_list[i+1], (1,1), True, name='stage%d_unit%d' % (i+1, j+2),
+          bottle_neck=bottle_neck, **kwargs)
 
     fc1 = symbol_utils.get_fc1(body, num_classes, fc_type)
     return fc1
 
-def get_symbol(num_classes, num_layers, **kwargs):
+def get_symbol():
     """
     Adapted from https://github.com/tornadomeet/ResNet/blob/master/train_resnet.py
     Original author Wei Wu
     """
+    num_classes = config.emb_size
+    num_layers = config.num_layers
     if num_layers >= 101:
         filter_list = [64, 256, 512, 1024, 2048]
         bottle_neck = True
@@ -650,24 +581,20 @@ def get_symbol(num_classes, num_layers, **kwargs):
     num_stages = 4
     if num_layers == 18:
         units = [2, 2, 2, 2]
-    elif num_layers == 20:
-        units = [1, 2, 4, 1]
     elif num_layers == 34:
         units = [3, 4, 6, 3]
-    elif num_layers == 36:
-        units = [2, 4, 8, 2]
     elif num_layers == 49:
         units = [3, 4, 14, 3]
     elif num_layers == 50:
         units = [3, 4, 14, 3]
-    elif num_layers == 64:
-        units = [3, 8, 16, 3]
     elif num_layers == 74:
         units = [3, 6, 24, 3]
     elif num_layers == 90:
         units = [3, 8, 30, 3]
     elif num_layers == 100:
         units = [3, 13, 30, 3]
+    elif num_layers == 124:
+        units = [3, 13, 40, 5]
     elif num_layers == 101:
         units = [3, 4, 23, 3]
     elif num_layers == 152:
@@ -679,23 +606,9 @@ def get_symbol(num_classes, num_layers, **kwargs):
     else:
         raise ValueError("no experiments done on num_layers {}, you can do it yourself".format(num_layers))
 
-    if num_layers in [20, 36, 64]:
-        kwargs['stride_in_res'] = False
-    kwargs['total_layers'] = sum(units)
-    width_mult = kwargs.get('width_mult', 1)
-    filter_list = [int(c * width_mult) for c in filter_list]
-
-    pyramid_alpha = kwargs.get('pyramid_alpha', 0)
-    if pyramid_alpha > 0:
-        first_stage = 64
-        pyramid_alpha = int(np.ceil(pyramid_alpha // sum(units) / 32.) * 32)
-        kwags['pyramid_alpha'] = pyramid_alpha
-        filter_list = [first_stage] + [first_stage + sum(units[:stage] + 1) * pyramid_alpha for stage in range(4)]
-
     return resnet(units       = units,
                   num_stages  = num_stages,
                   filter_list = filter_list,
                   num_classes = num_classes,
-                  bottle_neck = bottle_neck,
-                  **kwargs)
+                  bottle_neck = bottle_neck)
 

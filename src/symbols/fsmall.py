@@ -35,8 +35,6 @@ from shake_drop import *
 def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn'):
     if method == 'bn':
         out = mx.sym.BatchNorm(data=data,fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/bn')
-    elif method == 'sbn':
-        out = mx.contrib.sym.SyncBatchNorm(data=data, fix_gamma=fix_gamma, eps=eps, momentum=momentum, name=name + '/bn', key = name + '/bn')
     elif method == 'in':
         out = mx.sym.InstanceNorm(data=data, eps=eps, name=name + '/in')
     elif method == 'row':
@@ -599,6 +597,7 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
       data = data-127.5
       data = data*0.0078125
       body = data
+      body = mx.sym.Pooling(data=body, kernel=(4, 4), stride=(4,4), pad=(0,0), pool_type='avg')
       body = Conv(data=body, num_filter=filter_list[0], kernel=(3,3), stride=(1,1), pad=(1, 1),
                                 no_bias=True, name="conv0", workspace=workspace)
       body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0')
@@ -641,46 +640,11 @@ def get_symbol(num_classes, num_layers, **kwargs):
     Adapted from https://github.com/tornadomeet/ResNet/blob/master/train_resnet.py
     Original author Wei Wu
     """
-    if num_layers >= 101:
-        filter_list = [64, 256, 512, 1024, 2048]
-        bottle_neck = True
-    else:
-        filter_list = [64, 64, 128, 256, 512]
-        bottle_neck = False
-    num_stages = 4
-    if num_layers == 18:
-        units = [2, 2, 2, 2]
-    elif num_layers == 20:
-        units = [1, 2, 4, 1]
-    elif num_layers == 34:
-        units = [3, 4, 6, 3]
-    elif num_layers == 36:
-        units = [2, 4, 8, 2]
-    elif num_layers == 49:
-        units = [3, 4, 14, 3]
-    elif num_layers == 50:
-        units = [3, 4, 14, 3]
-    elif num_layers == 64:
-        units = [3, 8, 16, 3]
-    elif num_layers == 74:
-        units = [3, 6, 24, 3]
-    elif num_layers == 90:
-        units = [3, 8, 30, 3]
-    elif num_layers == 100:
-        units = [3, 13, 30, 3]
-    elif num_layers == 101:
-        units = [3, 4, 23, 3]
-    elif num_layers == 152:
-        units = [3, 8, 36, 3]
-    elif num_layers == 200:
-        units = [3, 24, 36, 3]
-    elif num_layers == 269:
-        units = [3, 30, 48, 8]
-    else:
-        raise ValueError("no experiments done on num_layers {}, you can do it yourself".format(num_layers))
+    filter_list = [64, 64, 128]
+    bottle_neck = False
+    num_stages = 2
+    units = [2, 2]
 
-    if num_layers in [20, 36, 64]:
-        kwargs['stride_in_res'] = False
     kwargs['total_layers'] = sum(units)
     width_mult = kwargs.get('width_mult', 1)
     filter_list = [int(c * width_mult) for c in filter_list]

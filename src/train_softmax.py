@@ -28,6 +28,7 @@ import fmobilenetv2
 import fmnasnet
 import fmobilefacenet
 import fpeleefacenet
+import fsmall
 import fxception
 import fdensenet
 import fdpn
@@ -137,6 +138,8 @@ def parse_args():
   parser.add_argument('--scale', type=float, default=0.9993, help='param for sphere')
   parser.add_argument('--rand-mirror', type=int, default=1, help='if do random mirror in training')
   parser.add_argument('--cutoff', type=int, default=0, help='cut off aug')
+  parser.add_argument('--downsample-back', type=float, default=0.0, help='use downsample data augmentation')
+  parser.add_argument('--motion-blur', type=float, default=0.0, help='motion blur aug')
   parser.add_argument('--target', type=str, default='lfw,cfp_fp,agedb_30', help='verification targets')
   args = parser.parse_args()
   return args
@@ -188,6 +191,12 @@ def get_symbol(args, arg_params, aux_params):
   elif args.network[0]=='s':
     print('init spherenet', args.num_layers)
     embedding = spherenet.get_symbol(args.emb_size, args.num_layers)
+  elif args.network[0]=='z':
+    print('init small', args.num_layers)
+    embedding = fsmall.get_symbol(args.emb_size, args.num_layers, shake_drop=args.shake_drop,
+        version_se=args.version_se, version_input=args.version_input, 
+        version_output=args.version_output, version_unit=args.version_unit,
+        version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn)
   elif args.network[0]=='y':
     print('init mobilefacenet', args.num_layers)
     embedding = fmobilefacenet.get_symbol(args.emb_size, args.num_layers, bn_mom = args.bn_mom, version_output=args.version_output)
@@ -430,6 +439,8 @@ def train_net(args):
         margin_policy        = args.margin_policy,
         max_steps            = args.max_steps,
         data_names           = ['data', 'margin']
+        downsample_back      = args.downsample_back,
+        motion_blur          = args.motion_blur,
     )
 
     if args.loss_type<10:
