@@ -19,6 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
 import face_image
 sys.path.append(os.path.join(os.path.dirname(__file__), 'eval'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'symbols'))
+from utils.adabound import AdaBound
 import fresnet
 import finception_resnet_v2
 import flightcnn
@@ -26,6 +27,7 @@ import fmobilenet
 import fmobilenetv2
 import fmnasnet
 import fmobilefacenet
+import fpeleefacenet
 import fxception
 import fdensenet
 import fdpn
@@ -121,6 +123,7 @@ def parse_args():
   parser.add_argument('--emb-size', type=int, default=512, help='embedding length')
   parser.add_argument('--per-batch-size', type=int, default=128, help='batch size in each context')
   parser.add_argument('--margin-m', type=float, default=0.5, help='margin for loss')
+  parser.add_argument('--margin-policy', type=str, default='fixed', help='margin_m policy [fixed, step, linear]')
   parser.add_argument('--margin-s', type=float, default=64.0, help='scale for feature')
   parser.add_argument('--margin-a', type=float, default=1.0, help='')
   parser.add_argument('--margin-b', type=float, default=0.0, help='')
@@ -149,6 +152,8 @@ def get_symbol(args, arg_params, aux_params):
     embedding = fdensenet.get_symbol(args.emb_size, args.num_layers,
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit)
+  elif args.network[0]=='e':
+    embedding = fpeleefacenet.get_symbol(args.emb_size, num_layers=None, version_output=args.version_output) 
   elif args.network[0]=='m':
     print('init mobilenet', args.num_layers)
     if args.num_layers==1:
@@ -195,6 +200,9 @@ def get_symbol(args, arg_params, aux_params):
 
   all_label = mx.symbol.Variable('softmax_label')
   all_label = mx.symbol.split(data=all_label, axis=1, num_outputs=len(args.num_classes))
+
+  if args.loss_type == 6:
+    m = mx.symbol.Variable(name='margin') 
 
   for i in range(len(args.num_classes)):
     gt_label = all_label[i].reshape([-1, ])
@@ -291,6 +299,42 @@ def get_symbol(args, arg_params, aux_params):
           gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes[i], on_value = 1.0, off_value = 0.0)
           body = mx.sym.broadcast_mul(gt_one_hot, diff)
           fc7 = fc7+body
+    elif args.loss_type==6: # linear margin m
+      s = args.margin_s
+      assert s>0.0
+      _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+      nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d' % i)*s
+      fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes[i], name='fc7_%d' % i)
+      zy = mx.sym.pick(fc7, gt_label, axis=1)
+      cos_t = zy/s
+      cos_m = mx.symbol.cos(m)
+      sin_m = mx.symbol.sin(m)
+      mm = mx.symbol.sin(math.pi-m)*m
+      #threshold = 0.0
+      threshold = mx.symbol.cos(math.pi-m)
+      if args.easy_margin:
+        cond = mx.symbol.Activation(data=cos_t, act_type='relu')
+      else:
+        cond_v = cos_t - threshold
+        cond = mx.symbol.Activation(data=cond_v, act_type='relu')
+      body = cos_t*cos_t
+      body = 1.0-body
+      sin_t = mx.sym.sqrt(body)
+      new_zy = cos_t*cos_m
+      b = sin_t*sin_m
+      new_zy = new_zy - b
+      new_zy = new_zy*s
+      if args.easy_margin:
+        zy_keep = zy
+      else:
+        zy_keep = zy - s*mm
+      new_zy = mx.sym.where(cond, new_zy, zy_keep)
+  
+      diff = new_zy - zy
+      diff = mx.sym.expand_dims(diff, 1)
+      gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes[i], on_value = 1.0, off_value = 0.0)
+      body = mx.sym.broadcast_mul(gt_one_hot, diff)
+      fc7 = fc7+body
     if i == 0:
       out_list = [mx.symbol.BlockGrad(embedding)]
     softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax_%d' % i, normalization='valid', use_ignore=True)
@@ -369,6 +413,7 @@ def train_net(args):
     model = mx.mod.Module(
         context       = ctx,
         symbol        = sym,
+        data_names    = ['data'] if args.loss_type != 6 else ['data', 'margin']
     )
     val_dataiter = None
 
@@ -380,6 +425,11 @@ def train_net(args):
         rand_mirror          = args.rand_mirror,
         mean                 = mean,
         cutoff               = args.cutoff,
+        loss_type            = args.loss_type,
+        margin_m             = args.margin_m,
+        margin_policy        = args.margin_policy,
+        max_steps            = args.max_steps,
+        data_names           = ['data', 'margin']
     )
 
     if args.loss_type<10:
@@ -395,8 +445,9 @@ def train_net(args):
     else:
       initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
     _rescale = 1.0/args.ctx_num
-    opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
-    som = 2000
+    opt = AdaBound()
+    #opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
+    som = 200
     _cb = mx.callback.Speedometer(args.batch_size, som)
 
     ver_list = []

@@ -25,14 +25,14 @@ logger = logging.getLogger()
 
 
 class FaceImageIter(io.DataIter):
-
     def __init__(self, batch_size, data_shape,
                  path_imgrecs = None,
                  shuffle=False, aug_list=None, mean = None,
                  rand_mirror = False, cutoff = 0,
-                 data_name='data', label_name='softmax_label', **kwargs):
+                 data_names=['data'], label_name='softmax_label', **kwargs):
         super(FaceImageIter, self).__init__()
         assert path_imgrecs
+        self.kwargs = kwargs
         if path_imgrecs:
             self.rec_num = len(path_imgrecs)
             self.seq, self.oseq = [], []
@@ -68,6 +68,8 @@ class FaceImageIter(io.DataIter):
                 else:
                   self.seq.append(None)
 
+        self.iteration = 0
+        self.margin_policy = self.kwargs['margin_policy']
         self.mean = mean
         self.nd_mean = None
         if self.mean:
@@ -75,7 +77,10 @@ class FaceImageIter(io.DataIter):
           self.nd_mean = mx.nd.array(self.mean).reshape((1,1,3))
 
         self.check_data_shape(data_shape)
-        self.provide_data = [(data_name, (batch_size,) + data_shape)]
+        if self.kwargs['loss_type'] == 6:
+          self.provide_data = [(data_names[0], (batch_size,) + data_shape), (data_names[1], (batch_size,))]
+        else:
+          self.provide_data = [(data_names[0], (batch_size,) + data_shape)]
         self.batch_size = batch_size
         self.data_shape = data_shape
         self.shuffle = shuffle
@@ -103,6 +108,20 @@ class FaceImageIter(io.DataIter):
 
     def num_samples(self, data_idx):
       return len(self.seq[data_idx])
+
+    def margin(self, iteration):
+        if self.margin_policy == 'fixed':
+          m= self.kwargs['margin_m']
+        elif self.margin_policy == 'step':
+          steps = [100000, 300000, 1000000]
+          values = [0, 0.35, 0.5]
+          for i, step in enumerate(steps):
+            if step > iteration:
+              m = values[i]
+              break
+        elif self.margin_policy == 'linear':
+            m = self.kwargs['margin_m'] / self.kwargs['max_steps'] * iteration
+        return m
 
     def next_sample(self, data_idx):
         """Helper function for reading in next sample."""
@@ -181,12 +200,14 @@ class FaceImageIter(io.DataIter):
         batch_size = self.batch_size
         c, h, w = self.data_shape
         batch_data = nd.empty((batch_size, c, h, w))
+        batch_margin = nd.empty((batch_size,))
         if self.provide_label is not None:
           batch_label = nd.empty(self.provide_label[0][1])
         i = 0
         try:
             data_idx = 0
             while i < batch_size:
+                batch_margin[i] = self.margin(self.iteration)
                 _label, s, bbox, landmark = self.next_sample(data_idx)
                 if(len(self.seq) > 1):
                   label = np.ones([self.rec_num,]) * (-1)
@@ -232,6 +253,7 @@ class FaceImageIter(io.DataIter):
         except StopIteration:
             if i<batch_size:
                 raise StopIteration
+        self.iteration += 1
         return io.DataBatch([batch_data], [batch_label], batch_size - i)
 
     def check_data_shape(self, data_shape):
