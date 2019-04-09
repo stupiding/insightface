@@ -438,7 +438,7 @@ def train_net(args):
         margin_m             = args.margin_m,
         margin_policy        = args.margin_policy,
         max_steps            = args.max_steps,
-        data_names           = ['data', 'margin']
+        data_names           = ['data', 'margin'],
         downsample_back      = args.downsample_back,
         motion_blur          = args.motion_blur,
     )
