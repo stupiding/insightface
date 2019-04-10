@@ -154,7 +154,10 @@ class FaceImageIter(io.DataIter):
             if s is None:
                 raise StopIteration
             header, img = recordio.unpack(s)
-            return header.label, img, None, None
+            label = header.label
+            if not isinstance(label, numbers.Number):
+              label = label[0]
+            return label, img, None, None
 
     def brightness_aug(self, src, x):
       alpha = 1.0 + random.uniform(-x, x)
@@ -320,12 +323,15 @@ class FaceImageIter(io.DataIter):
 
     def augmentation_transform(self, data):
         """Transforms input data with specified augmentation."""
-        data = data.asnumpy()
-        if self.motion_blur > 0:
-            data = self.motion_aug(data)
-        if self.downsample_back > 0:
-            data = self.downsample_aug(data)
-        return mx.nd.array(data)
+        if self.motion_blur > 0 or self.downsample_back > 0:
+            data = data.asnumpy()
+            if self.motion_blur > 0:
+                data = self.motion_aug(data)
+            if self.downsample_back > 0:
+                data = self.downsample_aug(data)
+            return mx.nd.array(data)
+        else:
+            return data
 
         """
         for aug in self.auglist:
