@@ -139,12 +139,14 @@ class MobilenetV2(nn.HybridBlock):
         #x = self.output(x)
         return x
 
-def get_symbol(num_classes, fc_type):
+def get_symbol(num_classes, num_layers=None, **kwargs):
   net = MobilenetV2(num_classes)
   data = mx.sym.Variable(name='data')
   data = data-127.5
   data = data*0.0078125
   body = net(data)
+  version_output = kwargs.get('version_output', 'E')
+  fc_type = version_output
   fc1 = symbol_utils.get_fc1(body, num_classes, fc_type)
   return fc1
 

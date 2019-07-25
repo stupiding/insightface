@@ -95,7 +95,7 @@ class MobilenetV2(nn.HybridBlock):
         #x = self.output(x)
         return x
 
-def get_symbol(num_classes, **kwargs):
+def get_symbol(num_classes, num_layers=None,  **kwargs):
   version_output = kwargs.get('version_output', 'E')
   fc_type = version_output
   net = MobilenetV2(num_classes, 1)

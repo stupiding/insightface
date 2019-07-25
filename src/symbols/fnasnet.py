@@ -564,12 +564,14 @@ class NASNetALarge(nn.HybridBlock):
         return x
 
 
-def get_symbol(num_classes):
+def get_symbol(num_classes, num_layers, **kwargs):
   model = NASNetALarge(num_classes)
   data = mx.sym.Variable(name='data')
   data = data-127.5
   data = data*0.0078125
   body = model.features(data)
-  fc1 = symbol_utils.get_fc1(body, num_classes, 'E')
+  version_output = kwargs.get('version_output', 'E')
+  fc_type = version_output
+  fc1 = symbol_utils.get_fc1(body, num_classes, fc_type)
   return fc1
 

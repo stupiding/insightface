@@ -119,7 +119,7 @@ inc_sec= {  2: 16, \
             4: 32, \
             5: 128 }
 
-def get_symbol(num_classes = 1000, num_layers=92, **kwargs):
+def get_symbol(num_classes, num_layers, **kwargs):
     if num_layers==68:
       k_R = 128
       G   = 32

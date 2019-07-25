@@ -66,7 +66,7 @@ def Circle_Middle(name, data,
     return b
 
 
-def get_symbol(num_classes=1000, **kwargs):
+def get_symbol(num_classes=1000, num_layers=None, **kwargs):
     # input shape 229*229*3 (old)
     # input shape 224*224*3 (new)
     

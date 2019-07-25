@@ -87,7 +87,7 @@ def parse_args():
   parser.add_argument('--verbose', type=int, default=2000, help='do verification testing and model saving every verbose batches')
   parser.add_argument('--max-steps', type=int, default=0, help='max training batches')
   parser.add_argument('--end-epoch', type=int, default=100000, help='training epoch size.')
-  parser.add_argument('--network', default='r50', help='specify network')
+  parser.add_argument('--network', default='fresnet,100', help='specify network')
   parser.add_argument('--width-mult', type=float, default=1, help="width-mult")
   parser.add_argument("--shake-drop", default=False, action="store_true" , help="whether use ShakeDrop")
   parser.add_argument('--version-se', type=int, default=0, help='whether to use se in network')
@@ -135,7 +135,6 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
   data_shape = (args.image_channel,args.image_h,args.image_w)
   image_shape = ",".join([str(x) for x in data_shape])
   margin_symbols = []
-
   print('init %s, num_layers: %d' % (network, num_layers))
   embedding = eval(network).get_symbol(args.emb_size, num_layers, shake_drop=args.shake_drop,
       version_se=args.version_se, version_input=args.version_input, 
@@ -148,35 +147,49 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
     fspherenet.init_weights(sym, data_shape_dict, int(num_layers))
 
   all_label = mx.symbol.Variable('softmax_label')
-  all_label = mx.symbol.split(data=all_label, axis=1, num_outputs=len(args.num_classes))
+  if len(args.num_classes) > 1:
+    all_label = mx.symbol.split(data=all_label, axis=1, num_outputs=len(args.num_classes))
 
   if args.loss_type == 6:
     m = mx.symbol.Variable(name='margin') 
 
+  cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip().split(',')
   for i in range(len(args.num_classes)):
     gt_label = all_label[i].reshape([-1, ])
     extra_loss = None
-    _weight = mx.symbol.Variable("fc7_%d_weight" % i, shape=(args.num_classes[i], args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
+    #_weight = mx.symbol.Variable("fc7_%d_weight" % i, shape=(args.num_classes[i], args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
     if args.loss_type==0: #softmax
-      if args.fc7_no_bias:
-        fc7 = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=args.num_classes[i], name='fc7_%d' % i)
-      else:
-        _bias = mx.symbol.Variable('fc7_%d_bias' % i, lr_mult=2.0, wd_mult=0.0)
-        fc7 = mx.sym.FullyConnected(data=embedding, weight = _weight, bias = _bias, num_hidden=args.num_classes[i], name='fc7_%d' % i)
-    elif args.loss_type==1: #sphere
-      _weight = mx.symbol.L2Normalization(_weight, mode='instance')
-      fc7 = mx.sym.LSoftmax(data=embedding, label=gt_label, num_hidden=args.num_classes[i],
-                            weight = _weight,
-                            beta=args.beta, margin=args.margin, scale=args.scale,
-                            beta_min=args.beta_min, verbose=1000, name='fc7_%d' % i)
+      fc7_subs = []
+      classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
+      for ctx_id in range(len(cvd)):
+        with mx.AttrScope(ctx_group='dev%d' % (ctx_id+1)):
+          #_weight = mx.symbol.Variable("fc7_%d_%d_weight" % (i, ctx_id), shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
+          _weight = mx.symbol.Variable("fc7_%d_weight" % (ctx_id), shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
+          if args.fc7_no_bias:
+            fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name='fc7_%d' % (ctx_id))
+          else:
+            #_bias = mx.symbol.Variable('fc7_%d_%d_bias' % (i, ctx_id), lr_mult=2.0, wd_mult=0.0)
+            _bias = mx.symbol.Variable('fc7_%d_bias' % (ctx_id), lr_mult=2.0, wd_mult=0.0)
+            fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, bias = _bias, num_hidden=classes_each_ctx, name='fc7_%d' % (ctx_id))
+          fc7_subs.append(fc7_sub)
+      fc7 = mx.sym.concat(*fc7_subs, dim=1, name='fc7_subs_concat')
     elif args.loss_type==2:
       s = args.margin_s
       m = args.margin_m
       assert(s>0.0)
       assert(m>0.0)
-      _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+      
       nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d' % i)*s
-      fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes[i], name='fc7_%d' % i)
+      classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
+      fc7_subs = []
+      for ctx_id in range(1, len(cvd)+1):
+        with mx.AttrScope(ctx_group='dev%d' % ctx_id):
+          _weight = mx.symbol.Variable("fc7_%d_%d_weight" % (i, ctx_id), shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
+          _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+          fc7_sub = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name='fc7_%d_%d' % (i, ctx_id))
+          fc7_subs.append(fc7_sub)
+      fc7 = mx.sym.concat(*fc7_subs, dim=1, name='fc7_subs_concat')
+      
       s_m = s*m
       gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes[i], on_value = s_m, off_value = 0.0)
       fc7 = fc7-gt_one_hot
@@ -186,9 +199,19 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
       assert s>0.0
       assert m>=0.0
       assert m<(math.pi/2)
-      _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+      #_weight = mx.symbol.L2Normalization(_weight, mode='instance')
       nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d' % i)*s
-      fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes[i], name='fc7_%d' % i)
+      #fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes[i], name='fc7_%d' % i)
+      classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
+      fc7_subs = []
+      for ctx_id in range(1, len(cvd)+1):
+        with mx.AttrScope(ctx_group='dev%d' % ctx_id):
+          _weight = mx.symbol.Variable("fc7_%d_%d_weight" % (i, ctx_id), shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
+          _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+          fc7_sub = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name='fc7_%d_%d' % (i, ctx_id))
+          fc7_subs.append(fc7_sub)
+      fc7 = mx.sym.concat(*fc7_subs, dim=1, name='fc7_subs_concat')
+
       zy = mx.sym.pick(fc7, gt_label, axis=1)
       cos_t = zy/s
       cos_m = math.cos(m)
@@ -308,8 +331,6 @@ def train_net(args):
       os.makedirs(prefix_dir)
     end_epoch = args.end_epoch
     args.ctx_num = len(ctx)
-    args.num_layers = int(args.network[1:])
-    print('num_layers', args.num_layers)
     if args.per_batch_size==0:
       args.per_batch_size = 128
     args.batch_size = args.per_batch_size*args.ctx_num
@@ -348,19 +369,22 @@ def train_net(args):
     if len(args.pretrained)==0:
       arg_params = None
       aux_params = None
-      sym, arg_params, aux_params = get_symbol(network, num_layers, args, arg_params, aux_params)
+      sym, arg_params, aux_params = get_symbol(network, int(num_layers), args, arg_params, aux_params)
     else:
       vec = args.pretrained.split(',')
       print('loading', vec)
       _, arg_params, aux_params = mx.model.load_checkpoint(vec[0], int(vec[1]))
-      sym, arg_params, aux_params = get_symbol(network, num_layers, args, arg_params, aux_params)
+      sym, arg_params, aux_params = get_symbol(network, int(num_layers), args, arg_params, aux_params)
+      #print(sym.collect_params()[0].keys())
+      print(dir(sym)) #.collect_params()[0].keys())
 
     #label_name = 'softmax_label'
     #label_shape = (args.batch_size,)
     model = mx.mod.Module(
         context       = ctx,
         symbol        = sym,
-        data_names    = ['data'] if args.loss_type != 6 else ['data', 'margin']
+        data_names    = ['data'] if args.loss_type != 6 else ['data', 'margin'],
+        group2ctxs    = dict(zip(['dev%d' % (i+1) for i in range(len(ctx))], ctx))
     )
     val_dataiter = None
 
@@ -393,7 +417,7 @@ def train_net(args):
       initializer = mx.init.Xavier(rnd_type='gaussian', factor_type="in", magnitude=2) #inception
     else:
       initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
-    _rescale = 1.0/args.ctx_num
+    _rescale = 1.0/ args.batch_size # args.ctx_num 
     #opt = AdaBound()
     #opt = AdaBound(lr=base_lr, wd=base_wd, gamma = 2. / args.max_steps)
     opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
@@ -402,6 +426,7 @@ def train_net(args):
 
     ver_list = []
     ver_name_list = []
+    """
     for name in args.target.split(','):
       path = os.path.join(data_dir,name+".bin")
       if os.path.exists(path):
@@ -409,6 +434,7 @@ def train_net(args):
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
+    """
 
 
 

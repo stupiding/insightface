@@ -57,7 +57,7 @@ def ResidualFactory(data, num_1x1_a, num_3x3_b, num_1x1_c, R, name, weights, _ty
 
 # - - - - - - - - - - - - - - - - - - - - - - -
 # Collective Resudual Units
-def CRUFactory(data, num_1x1_a, num_3x3_b, num_1x1_c, R, name, weights, _type='normal', acc=False):
+def CRUFactory(data, num_1x1_a, num_3x3_b, num_1x1_c, R, name, weights, _type='normal', acc=False, bn_after=False):
 
     # type
     if _type is 'proj':
@@ -89,6 +89,8 @@ def CRUFactory(data, num_1x1_a, num_3x3_b, num_1x1_c, R, name, weights, _type='n
     c1x1_b = BN_AC_Conv( data=c3x3_b, num_filter=num_3x3_b, kernel=( 1,  1), name=('%s_c1x1-b(2)' % name), pad=( 0,  0))
     c1x1_c = BN_AC_Conv( data=c1x1_b, num_filter=num_1x1_c, kernel=( 1,  1), name=('%s_c1x1-c'    % name), pad=( 0,  0))
 
+    if bn_after:
+      c1x1_c = BN_AC( data=c1x1_c, name=('%s_c1x1-cbn'    % name))
     # OUTPUTS
     summ   = mx.symbol.ElementWiseSum(*[c1x1_w, c1x1_c],                     name=('%s_ele-sum'   % name))
     return summ

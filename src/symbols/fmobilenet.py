@@ -34,7 +34,7 @@ def ConvOnly(data, num_filter=1, kernel=(1, 1), stride=(1, 1), pad=(0, 0), num_g
     conv = mx.sym.Convolution(data=data, num_filter=num_filter, kernel=kernel, num_group=num_group, stride=stride, pad=pad, no_bias=True, name='%s%s_conv2d' %(name, suffix))
     return conv
 
-def get_symbol(num_classes, **kwargs):
+def get_symbol(num_classes, num_layers=None, **kwargs):
     data = mx.symbol.Variable(name="data") # 224
     data = data-127.5
     data = data*0.0078125
