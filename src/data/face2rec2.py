@@ -89,10 +89,18 @@ def image_encode(args, i, item, q_out):
       header = mx.recordio.IRHeader(item.flag, item.label, item.id, 0)
       #print('write', item.flag, item.id, item.label)
       if item.aligned:
-        with open(fullpath, 'rb') as fin:
-            img = fin.read()
-        s = mx.recordio.pack(header, img)
-        q_out.put((i, s, oitem))
+        if args.size == 0:
+            with open(fullpath, 'rb') as fin:
+                img = fin.read()
+            s = mx.recordio.pack(header, img)
+            q_out.put((i, s, oitem))
+        else:
+            img = cv2.imread(fullpath, args.color)
+            h, w = img.shape[:2]
+            h_off, w_off = (h  - args.size) / 2, (w - args.size) / 2
+            img = img[h_off:h_off + args.size, w_off:w_off+args.size, :]
+            s = mx.recordio.pack_img(header, img, quality=args.quality, img_fmt=args.encoding)
+            q_out.put((i, s, oitem))
       else:
         img = cv2.imread(fullpath, args.color)
         assert item.landmark is not None
@@ -174,6 +182,8 @@ def parse_args():
     rgroup = parser.add_argument_group('Options for creating database')
     rgroup.add_argument('--quality', type=int, default=95,
                         help='JPEG quality for encoding, 1-100; or PNG compression for encoding, 1-9')
+    rgroup.add_argument('--size', type=int, default=0,
+                        help='image size')
     rgroup.add_argument('--num-thread', type=int, default=1,
                         help='number of thread to use for encoding. order of images will be different\
         from the input list if >1. the input list will be modified to match the\
