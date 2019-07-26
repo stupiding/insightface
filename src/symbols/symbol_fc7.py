@@ -11,7 +11,7 @@ def Softmax(embedding, gt_label, classes_each_ctx, name, args, cvd=None):
   else:
     fc7_subs = []
     for ctx_id in range(len(cvd)):
-      with mx.AttrScope(ctx_group='dev%d' % ctx_id):
+      with mx.AttrScope(ctx_group='dev%d' % (ctx_id+1)):
         _weight = mx.symbol.Variable(name % ctx_id + "weight", shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
         if args.fc7_no_bias:
           fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name=name % ctx_id)
@@ -36,7 +36,7 @@ def CosFace(embedding, gt_label, classes_each_ctx, args, cvd=None):
   else:  
     fc7_subs = []
     for ctx_id in range(len(cvd)):
-      with mx.AttrScope(ctx_group='dev%d' % ctx_id):
+      with mx.AttrScope(ctx_group='dev%d' % (ctx_id+1)):
         _weight = mx.symbol.Variable(name % ctx_id + "weight", shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
         _weight = mx.symbol.L2Normalization(_weight, mode='instance')
         fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name=name % ctx_id)
@@ -63,7 +63,7 @@ def ArcFace(embedding, gt_label, classes_each_ctx, name, args, cvd=None):
   else:
     fc7_subs = []
     for ctx_id in range(len(cvd)):
-      with mx.AttrScope(ctx_group='dev%d' % ctx_id):
+      with mx.AttrScope(ctx_group='dev%d' % (ctx_id+1)):
         _weight = mx.symbol.Variable(name % ctx_id + "_weight", shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
         _weight = mx.symbol.L2Normalization(_weight, mode='instance')
         fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name=name % ctx_id)
@@ -115,7 +115,7 @@ def CombineFace(embedding, gt_label, classes_each_ctx, name, args, cvd=None):
   else:
     fc7_subs = []
     for ctx_id in range(len(cvd)):
-      with mx.AttrScope(ctx_group='dev%d' % ctx_id):
+      with mx.AttrScope(ctx_group='dev%d' % (ctx_id+1)):
         _weight = mx.symbol.Variable(name % ctx_id + "_weight", shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
         _weight = mx.symbol.L2Normalization(_weight, mode='instance')
         fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name=name % ctx_id)
@@ -159,7 +159,7 @@ def LarcFace(embedding, gt_label, classes_each_ctx, name, args, cvd=None):
   else:
     fc7_subs = []
     for ctx_id in range(len(cvd)):
-      with mx.AttrScope(ctx_group='dev%d' % ctx_id):
+      with mx.AttrScope(ctx_group='dev%d' % (ctx_id+1)):
         _weight = mx.symbol.Variable(name % ctx_id + "_weight", shape=(classes_each_ctx, args.emb_size), lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult)
         _weight = mx.symbol.L2Normalization(_weight, mode='instance')
         fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name=name % ctx_id)
