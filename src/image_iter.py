@@ -13,13 +13,14 @@ import datetime
 import numpy as np
 import cv2
 
+sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
+import face_preprocess
+import multiprocessing
+
 import mxnet as mx
 from mxnet import ndarray as nd
 from mxnet import io
 from mxnet import recordio
-sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
-import face_preprocess
-import multiprocessing
 
 logger = logging.getLogger()
 
