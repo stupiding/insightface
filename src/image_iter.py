@@ -63,7 +63,7 @@ class FaceImageIter(io.DataIter):
                   self.imgidx.append(list(self.imgrec[-1].keys))
 
                 if shuffle:
-                  self.seq.append(self.imgidx[-1])
+                  self.seq.append(list(self.imgidx[-1]))
                   self.oseq.append(self.imgidx[-1])
                   print(len(self.seq[-1]))
                 else:
@@ -94,8 +94,8 @@ class FaceImageIter(io.DataIter):
         self.cutoff = cutoff
         self.downsample_back = downsample_back
         self.motion_blur = motion_blur
-        #self.provide_label = [(label_name, (batch_size, self.rec_num))]
-        self.provide_label = [(label_name, (batch_size, self.rec_num))] if self.rec_num > 1 else [(label_name, (batch_size, ))]
+        self.provide_label = [(label_name, (batch_size, self.rec_num))]
+        #self.provide_label = [(label_name, (batch_size, self.rec_num))] if self.rec_num > 1 else [(label_name, (batch_size, ))]
         #print(self.provide_label[0][1])
         self.cur = [0] * len(path_imgrecs)
         self.nbatch = 0
@@ -195,7 +195,7 @@ class FaceImageIter(io.DataIter):
     def mirror_aug(self, img):
       _rd = random.randint(0,1)
       if _rd==1:
-        for c in xrange(img.shape[2]):
+        for c in range(img.shape[2]):
           img[:,:,c] = np.fliplr(img[:,:,c])
       return img
 

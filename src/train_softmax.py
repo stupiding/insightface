@@ -148,7 +148,8 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
     fspherenet.init_weights(sym, data_shape_dict, int(num_layers))
 
   all_label = mx.symbol.Variable('softmax_label')
-  all_label = mx.symbol.split(data=all_label, axis=1, num_outputs=len(args.num_classes))
+  if len(args.num_classes) > 1:
+    all_label = mx.symbol.split(data=all_label, axis=1, num_outputs=len(args.num_classes))
 
   if args.loss_type == 6:
     m = mx.symbol.Variable(name='margin') 
@@ -295,7 +296,7 @@ def train_net(args):
     ctx = []
     cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip()
     if len(cvd)>0:
-      for i in xrange(len(cvd.split(','))):
+      for i in range(len(cvd.split(','))):
         ctx.append(mx.gpu(i))
     if len(ctx)==0:
       ctx = [mx.cpu()]
@@ -308,8 +309,8 @@ def train_net(args):
       os.makedirs(prefix_dir)
     end_epoch = args.end_epoch
     args.ctx_num = len(ctx)
-    args.num_layers = int(args.network[1:])
-    print('num_layers', args.num_layers)
+    network, num_layers = args.network.split(',')
+    print('num_layers', num_layers)
     if args.per_batch_size==0:
       args.per_batch_size = 128
     args.batch_size = args.per_batch_size*args.ctx_num
@@ -328,7 +329,7 @@ def train_net(args):
       args.image_h = image_size[0]
       args.image_w = image_size[1]
       print('image_size', image_size)
-      assert(args.num_classes>0)
+      assert(args.num_classes[-1]>0)
       print('num_classes', args.num_classes)
       path_imgrecs.append(os.path.join(data_dir, "train.rec"))
 
@@ -344,16 +345,15 @@ def train_net(args):
     base_lr = args.lr
     base_wd = args.wd
     base_mom = args.mom
-    network, num_layers = args.network.split(',')
     if len(args.pretrained)==0:
       arg_params = None
       aux_params = None
-      sym, arg_params, aux_params = get_symbol(network, num_layers, args, arg_params, aux_params)
+      sym, arg_params, aux_params = get_symbol(network, int(num_layers), args, arg_params, aux_params)
     else:
       vec = args.pretrained.split(',')
       print('loading', vec)
       _, arg_params, aux_params = mx.model.load_checkpoint(vec[0], int(vec[1]))
-      sym, arg_params, aux_params = get_symbol(network, num_layers, args, arg_params, aux_params)
+      sym, arg_params, aux_params = get_symbol(network, int(num_layers), args, arg_params, aux_params)
 
     #label_name = 'softmax_label'
     #label_shape = (args.batch_size,)
@@ -414,7 +414,7 @@ def train_net(args):
 
     def ver_test(nbatch):
       results = []
-      for i in xrange(len(ver_list)):
+      for i in range(len(ver_list)):
         acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, label_shape = (args.batch_size, len(path_imgrecs)))
         print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
         #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
@@ -425,7 +425,7 @@ def train_net(args):
 
 
     highest_acc = [0.0, 0.0]  #lfw and target
-    #for i in xrange(len(ver_list)):
+    #for i in range(len(ver_list)):
     #  highest_acc.append(0.0)
     global_step = [0]
     save_step = [0]
@@ -434,7 +434,7 @@ def train_net(args):
       if args.loss_type>=1 and args.loss_type<=7:
         lr_steps = [100000, 140000, 160000]
       p = 512.0/args.batch_size
-      for l in xrange(len(lr_steps)):
+      for l in range(len(lr_steps)):
         lr_steps[l] = int(lr_steps[l]*p)
     else:
       lr_steps = [int(x) for x in args.lr_steps.split(',')]
