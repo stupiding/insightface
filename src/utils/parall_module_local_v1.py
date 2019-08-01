@@ -123,7 +123,7 @@ class ParallModule(BaseModule):
       #ag = {}
       #ax = {}
       rk = []
-      for k,v in g.iteritems():
+      for k,v in g.items():
         if k.startswith('fc7'):
           p1 = k.find('_')
           p2 = k.rfind('_')
@@ -132,9 +132,9 @@ class ParallModule(BaseModule):
           rk.append(k)
       for k in rk:
         del g[k]
-      #for k,v in g.iteritems():
+      #for k,v in g.items():
       #  print('g', k, v.shape)
-      #for k,v in ag.iteritems():
+      #for k,v in ag.items():
       #  print('ag', k, v.shape)
       self._curr_module.set_params(g, x)
       #self._arcface_module.set_params(ag, ax)
@@ -198,8 +198,6 @@ class ParallModule(BaseModule):
             self.logger.warning('optimizer already initialized, ignoring.')
             return
 
-        print(optimizer, dir(optimizer))
-        print(optimizer.lr, optimizer.lr_mult, optimizer.momentum,  optimizer.rescale_grad, optimizer.wd)
         self._curr_module.init_optimizer(kvstore, optimizer, optimizer_params,
                                          force_init=force_init)
         for _module in self._arcface_modules:

@@ -23,6 +23,7 @@ from mxnet import io
 from mxnet import recordio
 
 logger = logging.getLogger()
+from utils import init_random
 
 
 class FaceImageIter(io.DataIter):
@@ -71,7 +72,7 @@ class FaceImageIter(io.DataIter):
                   self.seq.append(None)
 
         self.iteration = 0
-        self.margin_policy = self.kwargs['margin_policy']
+        self.margin_policy = self.kwargs.get('margin_policy', 'step')
         self.mean = mean
         self.nd_mean = None
         if self.mean:

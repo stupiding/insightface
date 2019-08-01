@@ -16,10 +16,10 @@ config.net_output = 'E'
 config.net_multiplier = 1.0
 config.val_targets = ['lfw', 'cfp_fp', 'agedb_30']
 config.ce_loss = True
-config.fc7_lr_mult = 1.0
+config.fc7_lr_mult = 1000.0
 config.fc7_wd_mult = 1.0
 config.fc7_no_bias = False
-config.max_steps = 0
+config.max_steps = 280000
 config.data_rand_mirror = True
 config.data_cutoff = False
 config.data_color = 0
@@ -161,7 +161,7 @@ loss.nsoftmax.loss_m3 = 0.0
 
 loss.arcface = edict()
 loss.arcface.loss_name = 'margin_softmax'
-loss.arcface.loss_s = 64.0
+loss.arcface.loss_s = 60.0
 loss.arcface.loss_m1 = 1.0
 loss.arcface.loss_m2 = 0.35
 loss.arcface.loss_m3 = 0.0
@@ -204,23 +204,22 @@ default = edict()
 # default network
 default.network = 'r100'
 default.pretrained = '' #'../models/r100-arcface-bjz_20W/model,0'
-default.pretrained_epoch = 1
 # default dataset
 #default.dataset = 'bjz_20W'
-#default.dataset = 'bjz30W_20W'
-default.dataset = 'emore'
+default.dataset = 'bjz30W_20W'
+#default.dataset = 'emore'
 default.loss = 'arcface'
 default.frequent = 200
 default.verbose = 20000
 default.kvstore = 'device'
 
-default.end_epoch = 10
-default.lr = 0.1
+default.end_epoch = 100
+default.lr = 0.00001
 default.wd = 0.0005
 default.mom = 0.9
-default.per_batch_size = 32
+default.per_batch_size = 8
 default.ckpt = 2
-default.lr_steps = '100000,160000,220000'
+default.lr_steps = '220000,260000,280000'
 default.models_root = '../models'
 
 

@@ -7,6 +7,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from image_iter import FaceImageIter
+
 import os, sys
 import math, random
 import logging
@@ -15,7 +17,6 @@ import sklearn
 import argparse
 import numpy as np
 import mxnet as mx
-from image_iter import FaceImageIter
 from mxnet import ndarray as nd
 import mxnet.optimizer as optimizer
 
@@ -54,7 +55,6 @@ def parse_args():
   generate_config(args.network, args.dataset, args.loss)
   parser.add_argument('--models-root', default=default.models_root, help='root directory to save model.')
   parser.add_argument('--pretrained', default=default.pretrained, help='pretrained model to load')
-  parser.add_argument('--pretrained-epoch', type=int, default=default.pretrained_epoch, help='pretrained epoch to load')
   parser.add_argument('--ckpt', type=int, default=default.ckpt, help='checkpoint saving option. 0: discard saving. 1: save when necessary. 2: always save')
   parser.add_argument('--verbose', type=int, default=default.verbose, help='do verification testing and model saving every verbose batches')
   parser.add_argument('--max-steps', type=int, default=0, help='max training batches')
@@ -129,14 +129,10 @@ def get_symbol_arcface(args):
   return out
 
 def train_net(args):
-    #_seed = 727
-    #random.seed(_seed)
-    #np.random.seed(_seed)
-    #mx.random.seed(_seed)
     ctx = []
     cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip()
     if len(cvd)>0:
-      for i in xrange(len(cvd.split(','))):
+      for i in range(len(cvd.split(','))):
         ctx.append(mx.gpu(i))
     if len(ctx)==0:
       ctx = [mx.cpu()]
@@ -239,7 +235,16 @@ def train_net(args):
 
     _rescale = 1.0/ args.batch_size
     print(base_lr, base_mom, base_wd, args.batch_size)
-    opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
+
+    lr_steps = [int(x) for x in args.lr_steps.split(',')]
+    lr_scheduler =  mx.lr_scheduler.MultiFactorScheduler(lr_steps, factor=0.1, base_lr=base_lr)
+    optimizer_params = {'learning_rate':base_lr,
+                        'momentum':base_mom,
+                        'wd':base_wd,
+                        'rescale_grad':_rescale, 
+                        'lr_scheduler': lr_scheduler}
+
+    #opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
 
     _cb = mx.callback.Speedometer(args.batch_size, args.frequent)
 
@@ -259,7 +264,7 @@ def train_net(args):
 
     def ver_test(nbatch):
       results = []
-      for i in xrange(len(ver_list)):
+      for i in range(len(ver_list)):
         acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, None)
         print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
         #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
@@ -269,7 +274,7 @@ def train_net(args):
 
 
     highest_acc = [0.0, 0.0]  #lfw and target
-    #for i in xrange(len(ver_list)):
+    #for i in range(len(ver_list)):
     #  highest_acc.append(0.0)
     global_step = [0]
     save_step = [0]
@@ -279,15 +284,17 @@ def train_net(args):
       #global global_step
       global_step[0]+=1
       mbatch = global_step[0]
-      for step in lr_steps:
-        if mbatch==step:
-          opt.lr *= 0.1
-          print('lr change to', opt.lr)
-          break
+
+      #for step in lr_steps:
+      #  if mbatch==step:
+      #    opt.lr *= 0.1
+      #    print('lr change to', opt.lr)
+      #    break
 
       _cb(param)
       if mbatch%1000==0:
-        print('lr-batch-epoch:',opt.lr,param.nbatch,param.epoch)
+        #print('lr-batch-epoch:',opt.lr,param.nbatch,param.epoch)
+        print('batch-epoch:',param.nbatch,param.epoch)
 
       if mbatch>=0 and mbatch%args.verbose==0:
         acc_list = ver_test(mbatch)
@@ -338,8 +345,8 @@ def train_net(args):
       model_prefix, epoch = args.pretrained.split(',')
       begin_epoch = int(epoch)
       _, arg_params, aux_params = mx.model.load_checkpoint(model_prefix, begin_epoch)
-      """
       fc_params = list(arg_params.keys())
+      """
       for k in fc_params:
         if 'fc7' in k:
           arg_params.pop(k)
@@ -356,8 +363,8 @@ def train_net(args):
         eval_data          = val_dataiter,
         #eval_metric        = eval_metrics,
         kvstore            = args.kvstore,
-        optimizer          = opt,
-        #optimizer_params   = optimizer_params,
+        #optimizer          = opt,
+        optimizer_params   = optimizer_params,
         initializer        = initializer,
         arg_params         = arg_params,
         aux_params         = aux_params,
