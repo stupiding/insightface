@@ -258,11 +258,17 @@ def train_net(args):
     def ver_test(nbatch):
       results = []
       for i in range(len(ver_list)):
-        acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, label_shape = (args.batch_size, len(path_imgrecs)))
-        print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
-        #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
-        print('[%s][%d]Accuracy-Flip: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc2, std2))
-        results.append(acc2)
+        _, issame_list = ver_list[i]
+        if all(issame_list):
+          fp_rates, fp_dict, thred_dict, recall_dict = verification.test(ver_list[i], model, args.batch_size)
+          for k in fp_rates:
+            print("[%s] TPR at FPR %.2e[%.2e: %.4f]:\t%.5f" %(ver_names_list[i], k, fp_dict[k], thred_dict[k], recall_dict[k]))
+        else:
+          acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, label_shape = (args.batch_size, len(path_imgrecs)))
+          print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
+          #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
+          print('[%s][%d]Accuracy-Flip: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc2, std2))
+          results.append(acc2)
       return results
 
 

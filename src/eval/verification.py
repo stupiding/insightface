@@ -181,6 +181,56 @@ def evaluate(embeddings, actual_issame, nrof_folds=10, pca = 0):
         np.asarray(actual_issame), 1e-3, nrof_folds=nrof_folds)
     return tpr, fpr, accuracy, val, val_std, far
 
+def calc_cos(ft1, ft2, rpj=0):
+    sq1 = np.sqrt((ft1 * ft1).sum(1)).reshape([-1, 1])
+    sq2 = np.sqrt((ft2 * ft2).sum(1)).reshape([-1, 1])
+    ft1 = ft1 / sq1
+    ft2 = ft2 / sq2
+
+    if rpj>0:
+        ft1 = np.dot(ft1, proj[:, :rpj])
+        ft2 = np.dot(ft2, proj[:, :rpj])
+        ft1[ft1<0], ft1[ft1>=0] = -1, 1
+        ft2[ft2<0], ft2[ft2>=0] = -1, 1
+
+    return np.dot(ft1, ft2.T)
+
+def calc_pr(scores, image_ids = None, euc_dis = None):
+    tp_score = scores.diagonal()
+    pos_num = float(scores.shape[0])
+    neg_num = pos_num * (pos_num - 1)
+    sorted_scores = np.sort(scores.reshape([-1, ]))[::-1]
+    print('number of pairs:', len(sorted_scores))
+
+    fp_rates = [0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001]
+    fp_dict = dict(zip(fp_rates, [fp_rates[0] * 10] + fp_rates[:-1]))
+    recall_dict = dict(zip(fp_rates, [fp_rates[0] * 10] + fp_rates[:-1]))
+    thred_dict = dict(zip(fp_rates, fp_rates))
+
+    fp_idx = 0 # to avoid equal scores' bug
+    for idx, thred in enumerate(sorted_scores):
+       if sorted_scores[idx] != sorted_scores[fp_idx]:
+          fp_idx = idx
+       tp_num = (tp_score >= thred).sum()
+       fp_num = fp_idx - tp_num + 1
+
+       tn_num = neg_num - fp_num
+       fn_num = pos_num - tp_num
+
+       recall = tp_num / pos_num
+       fprate = fp_num / neg_num
+
+       for k in fp_dict:
+           if abs(k - fprate) <= abs(k - fp_dict[k]):
+               fp_dict[k] = fprate
+               recall_dict[k] = max(recall, recall_dict[k])
+               thred_dict[k] = thred
+
+       if fprate > fp_rates[0] + 0.0000001:
+           break
+    return fp_rates, fp_dict, thred_dict, recall_dict
+
+
 def load_bin(path, image_size):
   bins, issame_list = pickle.load(open(path, 'rb'), encoding='bytes')
   data_list = []
@@ -194,7 +244,12 @@ def load_bin(path, image_size):
     for flip in [0,1]:
       if flip==1:
         img = mx.ndarray.flip(data=img, axis=2)
-      data_list[flip][i][:] = img
+      assert img.shape[1] >= image_size[0] and img.shape[2] >= image_size[1]
+      y_off = (img.shape[1] - image_size[0]) // 2
+      x_off = (img.shape[2] - image_size[1]) // 2
+      y_end = y_off + image_size[0]
+      x_end = x_off + image_size[1]
+      data_list[flip][i][:] = img[:, y_off:y_end, x_off:x_end]
     if i%1000==0:
       print('loading bin', i)
   print(data_list[0].shape)
@@ -204,13 +259,17 @@ def test(data_set, mx_model, batch_size, nfolds=10, data_extra = None, label_sha
   print('testing verification..')
   data_list = data_set[0]
   issame_list = data_set[1]
+  if all(issame_list):
+    NvN = True
+  else:
+    NvN = False
   model = mx_model
   embeddings_list = []
   if data_extra is not None:
     _data_extra = nd.array(data_extra)
   time_consumed = 0.0
   if label_shape is None:
-    _label = nd.ones( (batch_size,) )
+    _label = nd.ones( (batch_size, 1) )
   else:
     _label = nd.ones( label_shape )
   for i in range( len(data_list) ):
@@ -264,7 +323,7 @@ def test(data_set, mx_model, batch_size, nfolds=10, data_extra = None, label_sha
   _xnorm /= _xnorm_cnt
 
   embeddings = embeddings_list[0].copy()
-  embeddings = sklearn.preprocessing.normalize(embeddings)
+  #embeddings = sklearn.preprocessing.normalize(embeddings)
   acc1 = 0.0
   std1 = 0.0
   #_, _, accuracy, val, val_std, far = evaluate(embeddings, issame_list, nrof_folds=10)
@@ -272,13 +331,19 @@ def test(data_set, mx_model, batch_size, nfolds=10, data_extra = None, label_sha
 
   #print('Validation rate: %2.5f+-%2.5f @ FAR=%2.5f' % (val, val_std, far))
   #embeddings = np.concatenate(embeddings_list, axis=1)
-  embeddings = embeddings_list[0] + embeddings_list[1]
-  embeddings = sklearn.preprocessing.normalize(embeddings)
-  print(embeddings.shape)
-  print('infer time', time_consumed)
-  _, _, accuracy, val, val_std, far = evaluate(embeddings, issame_list, nrof_folds=nfolds)
-  acc2, std2 = np.mean(accuracy), np.std(accuracy)
-  return acc1, std1, acc2, std2, _xnorm, embeddings_list
+  if NvN:
+    #embeddings = sklearn.preprocessing.normalize(embeddings)
+    scores = calc_cos(embeddings[0::2, :], embeddings[1::2, :]) 
+    fp_rates, fp_dict, thred_dict, recale_dict = calc_pr(scores)
+    return fp_rates, fp_dict, thred_dict, recale_dict
+  else:
+    embeddings = embeddings_list[0] + embeddings_list[1]
+    embeddings = sklearn.preprocessing.normalize(embeddings)
+    print(embeddings.shape)
+    print('infer time', time_consumed)
+    _, _, accuracy, val, val_std, far = evaluate(embeddings, issame_list, nrof_folds=nfolds)
+    acc2, std2 = np.mean(accuracy), np.std(accuracy)
+    return acc1, std1, acc2, std2, _xnorm, embeddings_list
 
 def test_badcase(data_set, mx_model, batch_size, name='', data_extra = None, label_shape = None):
   print('testing verification badcase..')
