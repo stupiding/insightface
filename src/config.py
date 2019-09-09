@@ -14,11 +14,11 @@ config.net_unit = 3
 config.net_input = 1
 config.net_output = 'E'
 config.net_multiplier = 1.0
-config.val_targets = ['lfw', 'cfp_fp', 'agedb_30']
+config.val_targets = ['lfw', 'cfp_fp', 'agedb_30', '9374']
 config.ce_loss = True
 config.fc7_lr_mult = 1000.0
 config.fc7_wd_mult = 1.0
-config.fc7_no_bias = False
+config.fc7_no_bias = True
 config.max_steps = 280000
 config.data_rand_mirror = True
 config.data_cutoff = False
@@ -26,6 +26,7 @@ config.data_color = 0
 config.data_images_filter = 0
 config.downsample_back = 0.0
 config.motion_blur = 0.0
+config.use_global_stats = True
 
 
 # network settings
@@ -144,10 +145,8 @@ dataset.bjz30W_20W.dataset = 'bjz30w_grid2'
 dataset.bjz30W_20W.dataset_path = '../datasets/bjz30w+grid2'
 dataset.bjz30W_20W.num_classes = 560480
 dataset.bjz30W_20W.image_shape = (112,112,3)
-dataset.bjz30W_20W.val_targets = ['lfw', 'cfp_fp', 'agedb_30']
+dataset.bjz30W_20W.val_targets = ['9374']
 
-loss = edict()
-loss = edict()
 loss = edict()
 loss.softmax = edict()
 loss.softmax.loss_name = 'softmax'
@@ -209,7 +208,7 @@ default.pretrained = '' #'../models/r100-arcface-bjz_20W/model,0'
 default.dataset = 'bjz30W_20W'
 #default.dataset = 'emore'
 default.loss = 'arcface'
-default.frequent = 200
+default.frequent = 2000
 default.verbose = 20000
 default.kvstore = 'device'
 

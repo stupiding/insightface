@@ -64,12 +64,9 @@ class FaceImageIter(io.DataIter):
                 else:
                   self.imgidx.append(list(self.imgrec[-1].keys))
 
-                if shuffle:
-                  self.seq.append(list(self.imgidx[-1]))
-                  self.oseq.append(self.imgidx[-1])
-                  print(len(self.seq[-1]))
-                else:
-                  self.seq.append(None)
+                self.seq.append(list(self.imgidx[-1]))
+                self.oseq.append(self.imgidx[-1])
+                print(len(self.seq[-1]))
 
         self.iteration = 0
         self.margin_policy = self.kwargs.get('margin_policy', 'step')
@@ -92,7 +89,7 @@ class FaceImageIter(io.DataIter):
         self.shuffle = shuffle
         self.image_size = '%d,%d'%(data_shape[1],data_shape[2])
         self.rand_mirror = rand_mirror
-        print('rand_mirror', rand_mirror)
+        print('rand_mirror: {}'.format( rand_mirror))
         self.cutoff = cutoff
         self.downsample_back = downsample_back
         self.motion_blur = motion_blur
@@ -115,8 +112,8 @@ class FaceImageIter(io.DataIter):
           if self.seq[i] is None and self.imgrec[i] is not None:
               self.imgrec[i].reset()
 
-    def num_samples(self, data_idx):
-      return len(self.seq[data_idx])
+    def num_samples(self, dataset_idx):
+      return len(self.seq[dataset_idx])
 
     def margin(self, iteration):
         if self.margin_policy == 'fixed':
@@ -132,27 +129,27 @@ class FaceImageIter(io.DataIter):
             m = self.kwargs['margin_m'] / self.kwargs['max_steps'] * iteration
         return m
 
-    def next_sample(self, data_idx):
+    def next_sample(self, dataset_idx):
         """Helper function for reading in next sample."""
         #set total batch size, for example, 1800, and maximum size for each people, for example 45
-        if self.seq[data_idx] is not None:
+        if self.seq[dataset_idx] is not None:
           while True:
-            if self.cur[data_idx] >= len(self.seq[data_idx]):
+            if self.cur[dataset_idx] >= len(self.seq[dataset_idx]):
                 raise StopIteration
-            idx = self.seq[data_idx][self.cur[data_idx]]
-            self.cur[data_idx] += 1
-            if self.imgrec[data_idx] is not None:
-              s = self.imgrec[data_idx].read_idx(idx)
+            idx = self.seq[dataset_idx][self.cur[dataset_idx]]
+            self.cur[dataset_idx] += 1
+            if self.imgrec[dataset_idx] is not None:
+              s = self.imgrec[dataset_idx].read_idx(idx)
               header, img = recordio.unpack(s)
               label = header.label
               if not isinstance(label, numbers.Number):
                 label = label[0]
               return label, img, None, None
             else:
-              label, fname, bbox, landmark = self.imglist[data_idx][idx]
+              label, fname, bbox, landmark = self.imglist[dataset_idx][idx]
               return label, self.read_image(fname), bbox, landmark
         else:
-            s = self.imgrec[data_idx].read()
+            s = self.imgrec[dataset_idx].read()
             if s is None:
                 raise StopIteration
             header, img = recordio.unpack(s)
@@ -242,16 +239,16 @@ class FaceImageIter(io.DataIter):
           batch_label = nd.empty(self.provide_label[0][1])
         i = 0
         try:
-            data_idx = 0
+            dataset_idx = 0
             while i < batch_size:
                 batch_margin[i] = self.margin(self.iteration)
-                _label, s, bbox, landmark = self.next_sample(data_idx)
+                _label, s, bbox, landmark = self.next_sample(dataset_idx)
                 if(len(self.seq) > 1):
                   label = np.ones([self.rec_num,]) * (-1)
-                  label[data_idx] = _label
+                  label[dataset_idx] = _label
                 else:
                   label = _label
-                data_idx = (data_idx + 1) % self.rec_num
+                dataset_idx = (dataset_idx + 1) % self.rec_num
                 _data = self.imdecode(s)
                 if self.rand_mirror:
                   _rd = random.randint(0,1)

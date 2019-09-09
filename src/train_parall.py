@@ -1,4 +1,3 @@
-
 '''
 @author: insightface
 '''
@@ -9,6 +8,7 @@ from __future__ import print_function
 
 from image_iter import FaceImageIter
 
+import pdb
 import os, sys
 import math, random
 import logging
@@ -57,7 +57,7 @@ def parse_args():
   parser.add_argument('--pretrained', default=default.pretrained, help='pretrained model to load')
   parser.add_argument('--ckpt', type=int, default=default.ckpt, help='checkpoint saving option. 0: discard saving. 1: save when necessary. 2: always save')
   parser.add_argument('--verbose', type=int, default=default.verbose, help='do verification testing and model saving every verbose batches')
-  parser.add_argument('--max-steps', type=int, default=0, help='max training batches')
+  parser.add_argument('--max-steps', type=int, default=config.max_steps, help='max training batches')
   parser.add_argument('--lr', type=float, default=default.lr, help='start learning rate')
   parser.add_argument('--lr-steps', type=str, default=default.lr_steps, help='steps of lr changing')
   parser.add_argument('--wd', type=float, default=default.wd, help='weight decay')
@@ -92,7 +92,7 @@ def get_symbol_arcface(args):
   gt_label = all_label
   is_softmax = True
   #print('call get_sym_arcface with', args, config)
-  _weight = mx.symbol.Variable("fc7_%d_weight"%args._ctxid, shape=(args.ctx_num_classes, config.emb_size),wd_mult=config.fc7_wd_mult, lr_mult=config.fc7_lr_mult)
+  _weight = mx.symbol.Variable("fc7_%d_weight"%args._ctxid, shape=(args.ctx_num_classes, config.emb_size)) #,wd_mult=config.fc7_wd_mult, lr_mult=config.fc7_lr_mult)
   if config.loss_name=='softmax': #softmax
     fc7 = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=args.ctx_num_classes, name='fc7_%d'%args._ctxid)
   elif config.loss_name=='margin_softmax':
@@ -153,14 +153,14 @@ def train_net(args):
     args.rescale_threshold = 0
     args.image_channel = config.image_shape[2]
     data_dir = config.dataset_path
-    path_imgrec = None
+    path_imgrecs = None
     path_imglist = None
     image_size = config.image_shape[0:2]
     assert len(image_size)==2
     assert image_size[0]==image_size[1]
     print('image_size', image_size)
     print('num_classes', config.num_classes)
-    path_imgrec = os.path.join(data_dir, "train.rec")
+    path_imgrecs = [os.path.join(data_dir, "train.rec")]
 
     data_shape = (args.image_channel,image_size[0],image_size[1])
 
@@ -170,6 +170,7 @@ def train_net(args):
       args.ctx_num_classes = config.num_classes//global_num_ctx
     else:
       args.ctx_num_classes = config.num_classes//global_num_ctx+1
+    print(config.num_classes, global_num_ctx, args.ctx_num_classes)
     args.local_num_classes = args.ctx_num_classes * args.ctx_num
     args.local_class_start = args.local_num_classes * args.worker_id
 
@@ -212,7 +213,7 @@ def train_net(args):
     train_dataiter = FaceImageIter(
         batch_size           = args.batch_size,
         data_shape           = data_shape,
-        path_imgrecs         = [path_imgrec],
+        path_imgrecs         = path_imgrecs,
         shuffle              = True,
         rand_mirror          = config.data_rand_mirror,
         mean                 = mean,
@@ -233,7 +234,7 @@ def train_net(args):
     else:
       initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
 
-    _rescale = 1.0/ args.batch_size
+    _rescale = 1.0 / args.batch_size
     print(base_lr, base_mom, base_wd, args.batch_size)
 
     lr_steps = [int(x) for x in args.lr_steps.split(',')]
@@ -244,14 +245,13 @@ def train_net(args):
                         'rescale_grad':_rescale, 
                         'lr_scheduler': lr_scheduler}
 
-    #opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
+    opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
 
     _cb = mx.callback.Speedometer(args.batch_size, args.frequent)
 
 
     ver_list = []
     ver_name_list = []
-    """
     for name in config.val_targets:
       path = os.path.join(data_dir,name+".bin")
       if os.path.exists(path):
@@ -259,17 +259,24 @@ def train_net(args):
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
-    """
 
 
     def ver_test(nbatch):
       results = []
       for i in range(len(ver_list)):
-        acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, None)
-        print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
-        #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
-        print('[%s][%d]Accuracy-Flip: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc2, std2))
-        results.append(acc2)
+        _, issame_list = ver_list[i]
+        if all(issame_list):
+          fp_rates, fp_dict, thred_dict, recall_dict = verification.test(ver_list[i], model, args.batch_size)
+          for k in fp_rates:
+            print("[%s] TPR at FPR %.2e[%.2e: %.4f]:\t%.5f" %(ver_name_list[i], k, fp_dict[k], thred_dict[k], recall_dict[k]))
+
+        else:
+          acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, label_shape = (args.batch_size, len(path_imgrecs)))
+          print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
+          #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
+          print('[%s][%d]Accuracy-Flip: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc2, std2))
+          results.append(acc2)
+
       return results
 
 
@@ -335,7 +342,7 @@ def train_net(args):
           _sym = model.symbol #all_layers['fc1_output']
           mx.model.save_checkpoint(prefix, msave, _sym, arg, aux)
         print('[%d]Accuracy-Highest: %1.5f'%(mbatch, highest_acc[-1]))
-      if config.max_steps>0 and mbatch>config.max_steps:
+      if args.max_steps>0 and mbatch>args.max_steps:
         sys.exit(0)
 
     epoch_cb = None
@@ -345,20 +352,10 @@ def train_net(args):
       model_prefix, epoch = args.pretrained.split(',')
       begin_epoch = int(epoch)
       _, arg_params, aux_params = mx.model.load_checkpoint(model_prefix, begin_epoch)
-      fc_params = list(arg_params.keys())
-      """
-      for k in fc_params:
-        if 'fc7' in k:
-          arg_params.pop(k)
-      fc_params = list(aux_params.keys())
-      for k in fc_params:
-        if 'fc7' in k:
-          aux_params.pop(k)
-      """
       #model.set_params(arg_params, aux_params)
 
     model.fit(train_dataiter,
-        begin_epoch        = begin_epoch,
+        begin_epoch        = 0, #begin_epoch,
         num_epoch          = default.end_epoch,
         eval_data          = val_dataiter,
         #eval_metric        = eval_metrics,

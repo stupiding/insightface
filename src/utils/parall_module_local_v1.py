@@ -128,7 +128,11 @@ class ParallModule(BaseModule):
           p1 = k.find('_')
           p2 = k.rfind('_')
           _ctxid = int(k[p1+1:p2])
-          self._arcface_modules[_ctxid].set_params({k:v}, {})
+          try:
+            print(v.asnumpy().shape)
+            self._arcface_modules[_ctxid].set_params({k:v}, {})
+          except Exception as e:
+            print('Fail to set fc7 weight on %d gpu' % (_ctxid), e)
           rk.append(k)
       for k in rk:
         del g[k]
@@ -138,6 +142,7 @@ class ParallModule(BaseModule):
       #  print('ag', k, v.shape)
       self._curr_module.set_params(g, x)
       #self._arcface_module.set_params(ag, ax)
+      self.params_initialized = True
 
 
     def init_params(self, initializer=Uniform(0.01), arg_params=None, aux_params=None,
@@ -149,16 +154,16 @@ class ParallModule(BaseModule):
         self._curr_module.init_params(initializer=initializer, arg_params=None,
                                       aux_params=None, allow_missing=allow_missing,
                                       force_init=force_init, allow_extra=allow_extra)
-        if arg_params is not None:
-          print('Load pretrained model and set _curr_module')
-          self.set_params(arg_params, aux_params)
-          #self._curr_module.set_params(arg_params, aux_params)
         for _module in self._arcface_modules:
           #_initializer = initializer
           _initializer = mx.init.Normal(0.01)
           _module.init_params(initializer=_initializer, arg_params=None,
                                         aux_params=None, allow_missing=allow_missing,
                                         force_init=force_init, allow_extra=allow_extra)
+        if arg_params is not None:
+          print('Load pretrained model and set _curr_module')
+          self.set_params(arg_params, aux_params)
+          #self._curr_module.set_params(arg_params, aux_params)
         self.params_initialized = True
 
 
@@ -200,9 +205,11 @@ class ParallModule(BaseModule):
 
         self._curr_module.init_optimizer(kvstore, optimizer, optimizer_params,
                                          force_init=force_init)
-        for _module in self._arcface_modules:
+        for ctx_idx, _module in enumerate(self._arcface_modules):
           _module.init_optimizer(kvstore, optimizer, optimizer_params,
                                            force_init=force_init)
+          _module._optimizer.lr_mult = {'fc7_%d_weight' % ctx_idx: config.fc7_lr_mult}
+          _module._optimizer.wd_mult = {'fc7_%d_weight' % ctx_idx: config.fc7_wd_mult}
         self.optimizer_initialized = True
 
     def kv_push(self, key, value):
@@ -296,10 +303,11 @@ class ParallModule(BaseModule):
           fc7_prob = self.get_ndarray(_ctx, 'test_fc7_prob', (self._batch_size, self._ctx_num_classes*len(self._context)))
           nd.concat(*_probs, dim=1, out=fc7_prob)
           fc7_pred = nd.argmax(fc7_prob, axis=1)
+          pd = fc7_pred.asnumpy().astype('int32')
           local_label = self.global_label - self._local_class_start
           #local_label = self.get_ndarray2(_ctx, 'test_label', local_label)
           _pred = nd.equal(fc7_pred, local_label)
-          print('fc7_acc: %d, %f' % ( self._iter, nd.mean(_pred).asnumpy()[0]))
+          print('fc7_acc [%d]: %f' % ( self._iter, nd.mean(_pred).asnumpy()[0]))
 
 
         #local_fc1_grad = []
