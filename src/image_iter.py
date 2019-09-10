@@ -30,7 +30,7 @@ class FaceImageIter(io.DataIter):
     def __init__(self, batch_size, data_shape,
                  path_imgrecs = None,
                  shuffle=False, aug_list=None, mean = None,
-                 rand_mirror = False, cutoff = 0,
+                 rand_mirror = False, cutoff = None, crop = None,
                  downsample_back = 0.0, motion_blur = 0.0,
                  data_names=['data'], label_name='softmax_label', **kwargs):
         super(FaceImageIter, self).__init__()
@@ -80,6 +80,9 @@ class FaceImageIter(io.DataIter):
           self.load_motion_kernel()
 
         self.check_data_shape(data_shape)
+        if crop is not None:
+            crop_h, crop_w = crop.crop_h, crop.crop_w
+            data_shape = (data_shape[0], crop_h, crop_w)
         if self.kwargs['loss_type'] == 6:
           self.provide_data = [(data_names[0], (batch_size,) + data_shape), (data_names[1], (batch_size,))]
         else:
@@ -91,6 +94,7 @@ class FaceImageIter(io.DataIter):
         self.rand_mirror = rand_mirror
         print('rand_mirror: {}'.format( rand_mirror))
         self.cutoff = cutoff
+        self.crop = crop
         self.downsample_back = downsample_back
         self.motion_blur = motion_blur
         self.provide_label = [(label_name, (batch_size, self.rec_num))]
@@ -259,17 +263,48 @@ class FaceImageIter(io.DataIter):
                     _data = _data.astype('float32')
                     _data -= self.nd_mean
                     _data *= 0.0078125
-                if self.cutoff>0:
-                  centerh = random.randint(0, _data.shape[0]-1)
-                  centerw = random.randint(0, _data.shape[1]-1)
-                  half = self.cutoff//2
-                  starth = max(0, centerh-half)
-                  endh = min(_data.shape[0], centerh+half)
-                  startw = max(0, centerw-half)
-                  endw = min(_data.shape[1], centerw+half)
-                  _data = _data.astype('float32')
-                  #print(starth, endh, startw, endw, _data.shape)
-                  _data[starth:endh, startw:endw, :] = 127.5
+                if self.crop is not None:
+                    crop_h, crop_w = self.crop.crop_h, self.crop.crop_w
+                    hrange, wrange = self.crop.hrange, self.crop.wrange
+
+                    img_h, img_w = _data.shape[:2]
+                    assert crop_h >= img_h and crop_w >= img_w
+
+                    full_hrange, full_wrange = img_h - crop_h, img_w - crop_w
+                    if hrange == -1
+                        h_off = random.randint(0, full_hrange)
+                    else:
+                        cur_range = min(full_hrange // 2, hrange)
+                        h_off = random.randint(-cur_range, cur_range) + full_hrange // 2
+                    if wrange == -1:
+                        w_off = random.randint(0, full_wrange)
+                    else:
+                        cur_range = min(full_wrange // 2, hrange)
+                        w_off = random.randint(-cur_range, cur_range) + full_wrange // 2
+                    _data = _data[h_off:h_off+crop_h, w_off:w_off+crop_w, :]
+                if self.cutoff is not None:
+                    cutoff_ratio = self.cutoff.ratio
+                    cutoff_size = self.cutoff.size
+                    cutoff_mode = self.cutoff.mode
+                    cutoff_filler = self.cutoff.filler
+                    if random.rand() < cutoff_ratio:
+                        if cutoff_mode == 'fixed':
+                            None
+                        elif cutoff_mode == 'uniform':
+                            cutoff_size = random.randint(1, cutoff_size)
+                        centerh = random.randint(0, _data.shape[0]-1)
+                        centerw = random.randint(0, _data.shape[1]-1)
+                        half = cutoff_size//2
+                        starth = max(0, centerh-half)
+                        endh = min(_data.shape[0], centerh+half)
+                        startw = max(0, centerw-half)
+                        endw = min(_data.shape[1], centerw+half)
+                        _data = _data.astype('float32')
+                        if cutoff_filler > 0:
+                            _data[starth:endh, startw:endw, :] = cutoff_filler
+                        else:
+                            # random init
+                            _data[starth:endh, startw:endw, :] = random.random() * 255
                 data = [_data]
                 try:
                     self.check_valid_image(data)

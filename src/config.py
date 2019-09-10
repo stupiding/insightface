@@ -22,12 +22,24 @@ config.fc7_no_bias = True
 config.max_steps = 280000
 config.data_rand_mirror = True
 config.data_cutoff = False
+config.data_crop = False
 config.data_color = 0
 config.data_images_filter = 0
 config.downsample_back = 0.0
 config.motion_blur = 0.0
 config.use_global_stats = True
 
+crop = edict()
+crop.crop_h = 112
+crop.crop_w = 112
+crop.hrange = 2
+crop.wrange = 2
+
+cutoff = edict()
+cutoff.ratio = 0.3
+cutoff.size = 32
+cutoff.mode = 'fixed' # 'uniform'
+cutoff.filler = 127.5
 
 # network settings
 network = edict()
@@ -220,6 +232,8 @@ default.per_batch_size = 8
 default.ckpt = 2
 default.lr_steps = '220000,260000,280000'
 default.models_root = '../models'
+default.cutoff = cutoff
+default.crop = crop
 
 
 def generate_config(_network, _dataset, _loss):
