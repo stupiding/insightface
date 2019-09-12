@@ -268,10 +268,10 @@ class FaceImageIter(io.DataIter):
                     hrange, wrange = self.crop.hrange, self.crop.wrange
 
                     img_h, img_w = _data.shape[:2]
-                    assert crop_h >= img_h and crop_w >= img_w
+                    assert crop_h <= img_h and crop_w <= img_w
 
                     full_hrange, full_wrange = img_h - crop_h, img_w - crop_w
-                    if hrange == -1
+                    if hrange == -1:
                         h_off = random.randint(0, full_hrange)
                     else:
                         cur_range = min(full_hrange // 2, hrange)
@@ -287,7 +287,7 @@ class FaceImageIter(io.DataIter):
                     cutoff_size = self.cutoff.size
                     cutoff_mode = self.cutoff.mode
                     cutoff_filler = self.cutoff.filler
-                    if random.rand() < cutoff_ratio:
+                    if random.random() < cutoff_ratio:
                         if cutoff_mode == 'fixed':
                             None
                         elif cutoff_mode == 'uniform':
