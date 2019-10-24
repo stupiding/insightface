@@ -255,7 +255,7 @@ def load_bin(path, image_size):
   print(data_list[0].shape)
   return (data_list, issame_list)
 
-def test(data_set, mx_model, batch_size, nfolds=10, data_extra = None, label_shape = None):
+def test(data_set, mx_model, batch_size, nfolds=10, data_extra = None, label_shape = None, use_bgr=False):
   print('testing verification..')
   data_list = data_set[0]
   issame_list = data_set[1]
@@ -280,6 +280,8 @@ def test(data_set, mx_model, batch_size, nfolds=10, data_extra = None, label_sha
       bb = min(ba+batch_size, data.shape[0])
       count = bb-ba
       _data = nd.slice_axis(data, axis=0, begin=bb-batch_size, end=bb)
+      if use_bgr:
+        _data = _data[:, ::-1, :, :]
       #print(_data.shape, _label.shape)
       time0 = datetime.datetime.now()
       if data_extra is None:

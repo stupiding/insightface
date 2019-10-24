@@ -70,6 +70,7 @@ class FaceImageIter(io.DataIter):
 
         self.iteration = 0
         self.margin_policy = self.kwargs.get('margin_policy', 'step')
+        self.use_bgr = self.kwargs.get('use_bgr', False)
         self.mean = mean
         self.nd_mean = None
         if self.mean:
@@ -259,10 +260,6 @@ class FaceImageIter(io.DataIter):
                   if _rd==1:
                     _data = mx.ndarray.flip(data=_data, axis=1)
                 _data = self.augmentation_transform(_data)
-                if self.nd_mean is not None:
-                    _data = _data.astype('float32')
-                    _data -= self.nd_mean
-                    _data *= 0.0078125
                 if self.crop is not None:
                     crop_h, crop_w = self.crop.crop_h, self.crop.crop_w
                     hrange, wrange = self.crop.hrange, self.crop.wrange
@@ -305,6 +302,10 @@ class FaceImageIter(io.DataIter):
                         else:
                             # random init
                             _data[starth:endh, startw:endw, :] = random.random() * 255
+                if self.nd_mean is not None:
+                    _data = _data.astype('float32')
+                    _data -= self.nd_mean
+                    _data *= 0.0078125
                 data = [_data]
                 try:
                     self.check_valid_image(data)
@@ -376,7 +377,10 @@ class FaceImageIter(io.DataIter):
 
     def postprocess_data(self, datum):
         """Final postprocessing step before image is loaded into the batch."""
-        return nd.transpose(datum, axes=(2, 0, 1))
+        if self.use_bgr:
+          return nd.transpose(datum[:, :, ::-1], axes=(2, 0, 1))
+        else:
+          return nd.transpose(datum, axes=(2, 0, 1))
 
 class FaceImageIterList(io.DataIter):
   def __init__(self, iter_list):
