@@ -127,7 +127,11 @@ class ParallModule(BaseModule):
         if k.startswith('fc7'):
           p1 = k.find('_')
           p2 = k.rfind('_')
-          _ctxid = int(k[p1+1:p2])
+          try:
+            _ctxid = int(k[p1+1:p2])
+          except Exception as e:
+            print('Error in load params [%s]' % e)
+            continue
           try:
             print(v.asnumpy().shape)
             self._arcface_modules[_ctxid].set_params({k:v}, {})

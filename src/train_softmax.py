@@ -25,6 +25,7 @@ from networks import *
 from symbol_fc7 import *
 import verification
 import sklearn
+from easydict import EasyDict as edict
 #sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
 #import center_loss
 
@@ -207,6 +208,12 @@ def train_net(args):
     )
     val_dataiter = None
 
+    cutoff = edict()
+    cutoff.ratio = 0.3
+    cutoff.size = 32
+    cutoff.mode = 'fixed' # 'uniform'
+    cutoff.filler = 127.5
+
     train_dataiter = FaceImageIter(
         batch_size           = args.batch_size,
         data_shape           = data_shape,
@@ -214,12 +221,12 @@ def train_net(args):
         shuffle              = True,
         rand_mirror          = args.rand_mirror,
         mean                 = mean,
-        cutoff               = args.cutoff,
+        cutoff               = cutoff,
         loss_type            = args.loss_type,
-        margin_m             = args.margin_m,
-        margin_policy        = args.margin_policy,
-        max_steps            = args.max_steps,
-        data_names           = ['data', 'margin'],
+        #margin_m             = args.margin_m,
+        #margin_policy        = args.margin_policy,
+        #max_steps            = args.max_steps,
+        #data_names           = ['data', 'margin'],
         downsample_back      = args.downsample_back,
         motion_blur          = args.motion_blur,
     )
@@ -245,6 +252,7 @@ def train_net(args):
 
     ver_list = []
     ver_name_list = []
+    """
     for name in args.target.split(','):
       path = os.path.join(data_dir,name+".bin")
       if os.path.exists(path):
@@ -252,6 +260,7 @@ def train_net(args):
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
+    """
 
 
 

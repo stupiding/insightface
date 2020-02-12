@@ -16,18 +16,21 @@ config.net_output = 'E'
 config.net_multiplier = 1.0
 config.val_targets = ['lfw', 'cfp_fp', 'agedb_30', '9374']
 config.ce_loss = True
-config.fc7_lr_mult = 1000.0
+config.fc7_lr_mult = 10.0
 config.fc7_wd_mult = 1.0
 config.fc7_no_bias = True
-config.max_steps = 280000
+config.max_steps = 70000
 config.data_rand_mirror = True
-config.data_cutoff = False
-config.data_crop = False
+config.data_cutoff = True
+config.data_crop = True
+config.data_mask = True
 config.data_color = 0
 config.data_images_filter = 0
 config.downsample_back = 0.0
 config.motion_blur = 0.0
 config.use_global_stats = True
+
+config.use_bgr = False
 
 crop = edict()
 crop.crop_h = 112
@@ -40,6 +43,11 @@ cutoff.ratio = 0.3
 cutoff.size = 32
 cutoff.mode = 'fixed' # 'uniform'
 cutoff.filler = 127.5
+
+mask = edict()
+mask.ratio = 0.3
+mask.size = 0.5
+mask.value = 0
 
 # network settings
 network = edict()
@@ -145,20 +153,37 @@ dataset.glint_cn.num_classes = 93979
 dataset.glint_cn.image_shape = (112,112,3)
 dataset.glint_cn.val_targets = ['lfw', 'cfp_fp', 'agedb_30']
 
+dataset.gy100 = edict()
+dataset.gy100 = edict()
+dataset.gy100.dataset = 'gy100'
+dataset.gy100.dataset_path = '../datasets/gy100_final'
+dataset.gy100.num_classes = 26679 
+dataset.gy100.image_shape = (112,112,3)
+dataset.gy100.val_targets = ['9374']
+
+dataset.bjz_20W = edict()
 dataset.bjz_20W = edict()
 dataset.bjz_20W.dataset = 'bjz_20W'
-dataset.bjz_20W.dataset_path = '../datasets/bjz+20W+gridRemoval'
+dataset.bjz_20W.dataset_path = '../datasets/bjz+grid_128x128'
 dataset.bjz_20W.num_classes = 1460480
 dataset.bjz_20W.image_shape = (112,112,3)
-dataset.bjz_20W.val_targets = ['lfw', 'cfp_fp', 'agedb_30']
+dataset.bjz_20W.val_targets = ['9374']
 
 dataset.bjz30W_20W = edict()
 dataset.bjz30W_20W.dataset = 'bjz30w_grid2'
-dataset.bjz30W_20W.dataset_path = '../datasets/bjz30w+grid2'
+dataset.bjz30W_20W.dataset_path = '../datasets/bjz30w+grid2_128x128'
 dataset.bjz30W_20W.num_classes = 560480
 dataset.bjz30W_20W.image_shape = (112,112,3)
 dataset.bjz30W_20W.val_targets = ['9374']
 
+dataset.bjz30W_20W_GY = edict()
+dataset.bjz30W_20W_GY.dataset = 'bjz30w_grid2_gy'
+dataset.bjz30W_20W_GY.dataset_path = '../datasets/bjz30w+grid2+gy50' #_id1st'
+dataset.bjz30W_20W_GY.num_classes = 654872
+dataset.bjz30W_20W_GY.image_shape = (112,112,3)
+dataset.bjz30W_20W_GY.val_targets = ['9374']
+
+loss = edict()
 loss = edict()
 loss.softmax = edict()
 loss.softmax.loss_name = 'softmax'
@@ -174,7 +199,7 @@ loss.arcface = edict()
 loss.arcface.loss_name = 'margin_softmax'
 loss.arcface.loss_s = 60.0
 loss.arcface.loss_m1 = 1.0
-loss.arcface.loss_m2 = 0.35
+loss.arcface.loss_m2 = 0.65
 loss.arcface.loss_m3 = 0.0
 
 loss.cosface = edict()
@@ -217,23 +242,25 @@ default.network = 'r100'
 default.pretrained = '' #'../models/r100-arcface-bjz_20W/model,0'
 # default dataset
 #default.dataset = 'bjz_20W'
-default.dataset = 'bjz30W_20W'
+default.dataset = 'bjz30W_20W_GY'
+#default.dataset = 'gy100'
 #default.dataset = 'emore'
 default.loss = 'arcface'
 default.frequent = 2000
-default.verbose = 20000
+default.verbose = 10000
 default.kvstore = 'device'
 
 default.end_epoch = 100
-default.lr = 0.00001
+default.lr = 0.0001
 default.wd = 0.0005
 default.mom = 0.9
-default.per_batch_size = 8
+default.per_batch_size = 32
 default.ckpt = 2
-default.lr_steps = '220000,260000,280000'
+default.lr_steps = '50000,60000,70000'
 default.models_root = '../models'
 default.cutoff = cutoff
 default.crop = crop
+default.mask = mask
 
 
 def generate_config(_network, _dataset, _loss):

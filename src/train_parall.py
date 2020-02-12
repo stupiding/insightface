@@ -6,7 +6,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from image_iter import FaceImageIter
+from pair_image_iter import FaceImageIter
 
 import pdb
 import os, sys
@@ -96,9 +96,12 @@ def get_symbol_arcface(args):
   if config.loss_name=='softmax': #softmax
     fc7 = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=args.ctx_num_classes, name='fc7_%d'%args._ctxid)
   elif config.loss_name=='margin_softmax':
-    _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+    #_weight = mx.symbol.L2Normalization(_weight, mode='instance')
+    #_weight_norm = mx.symbol.norm(_weight, ord=2, axis=1).reshape([-1, 1]) + 1e-10
+    #_weight_norm = mx.symbol.BlockGrad(_weight_norm)
+    #_weight = mx.symbol.broadcast_div(_weight, _weight_norm, axis=1)
     nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d'%args._ctxid)
-    fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.ctx_num_classes, name='fc7_%d'%args._ctxid)
+    fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, normalize=True, num_hidden=args.ctx_num_classes, name='fc7_%d'%args._ctxid)
     if config.loss_m1!=1.0 or config.loss_m2!=0.0 or config.loss_m3!=0.0:
       gt_one_hot = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = 1.0, off_value = 0.0)
       if config.loss_m1==1.0 and config.loss_m2==0.0:
@@ -219,13 +222,15 @@ def train_net(args):
         mean                 = mean,
         cutoff               = default.cutoff if config.data_cutoff else None,
         crop                 = default.crop if config.data_crop else None,
+        mask                 = default.mask if config.data_mask else None,
         #color_jittering      = config.data_color,
         #images_filter        = config.data_images_filter,
         loss_type            = args.loss,
         #margin_m             = config.loss_m2,
         data_names           = ['data'],
         downsample_back      = config.downsample_back,
-        motion_blur          = config.motion_blur
+        motion_blur          = config.motion_blur,
+        use_bgr              = config.use_bgr
     )
 
 
@@ -235,7 +240,7 @@ def train_net(args):
     else:
       initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
 
-    _rescale = 1.0 / args.batch_size
+    _rescale = 1.0 / 8 #/ args.batch_size
     print(base_lr, base_mom, base_wd, args.batch_size)
 
     lr_steps = [int(x) for x in args.lr_steps.split(',')]
@@ -267,12 +272,13 @@ def train_net(args):
       for i in range(len(ver_list)):
         _, issame_list = ver_list[i]
         if all(issame_list):
-          fp_rates, fp_dict, thred_dict, recall_dict = verification.test(ver_list[i], model, args.batch_size)
+          fp_rates, fp_dict, thred_dict, recall_dict = verification.test(ver_list[i], model, args.batch_size, use_bgr=config.use_bgr)
           for k in fp_rates:
             print("[%s] TPR at FPR %.2e[%.2e: %.4f]:\t%.5f" %(ver_name_list[i], k, fp_dict[k], thred_dict[k], recall_dict[k]))
 
         else:
-          acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, label_shape = (args.batch_size, len(path_imgrecs)))
+          acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, 
+              label_shape = (args.batch_size, len(path_imgrecs)), use_bgr=config.use_bgr)
           print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
           #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
           print('[%s][%d]Accuracy-Flip: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc2, std2))

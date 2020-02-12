@@ -30,7 +30,7 @@ class FaceImageIter(io.DataIter):
     def __init__(self, batch_size, data_shape,
                  path_imgrecs = None,
                  shuffle=False, aug_list=None, mean = None,
-                 rand_mirror = False, cutoff = None, crop = None,
+                 rand_mirror = False, cutoff = None, crop = None, mask = None,
                  downsample_back = 0.0, motion_blur = 0.0,
                  data_names=['data'], label_name='softmax_label', **kwargs):
         super(FaceImageIter, self).__init__()
@@ -96,6 +96,7 @@ class FaceImageIter(io.DataIter):
         print('rand_mirror: {}'.format( rand_mirror))
         self.cutoff = cutoff
         self.crop = crop
+        self.mask = mask
         self.downsample_back = downsample_back
         self.motion_blur = motion_blur
         self.provide_label = [(label_name, (batch_size, self.rec_num))]
@@ -302,6 +303,15 @@ class FaceImageIter(io.DataIter):
                         else:
                             # random init
                             _data[starth:endh, startw:endw, :] = random.random() * 255
+                if self.mask is not None:
+                    img_h, img_w = _data.shape[:2]
+
+                    mask_ratio = self.mask.ratio
+                    mask_size = int(img_h * self.mask.size)
+                    mask_value = self.mask.value
+                    if random.random() < cutoff_ratio:
+                        _data[-mask_size:, :, :] = mask_value
+                
                 if self.nd_mean is not None:
                     _data = _data.astype('float32')
                     _data -= self.nd_mean
