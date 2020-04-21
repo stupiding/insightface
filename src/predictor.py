@@ -128,7 +128,7 @@ def get_module(args, data_shapes, label_shapes):
 
   return model
 
-def get_data(path, batch_size):
+def get_data(path, batch_size, use_bgr=False):
     image_size = (112, 112)
     data_set = verification.load_bin(path, image_size)
     
@@ -143,6 +143,8 @@ def get_data(path, batch_size):
         bb = min(ba+batch_size, data.shape[0])
         count = bb-ba
         _data = nd.slice_axis(data, axis=0, begin=bb-batch_size, end=bb)
+        if use_bgr:
+          _data = _data[:, ::-1, :, :]
         #print(_data.shape, _label.shape)
         db = mx.io.DataBatch(data=(_data,)) #, label=(_label,))
         ba = bb
@@ -159,6 +161,7 @@ def predict(args):
     mean = None
 
     dataset = get_data('../datasets/9374.bin', args.batch_size)
+    #dataset = get_data('../datasets/bjz_maskVScard.bin', args.batch_size)
     #dataset = get_data('../datasets/test.bin', args.batch_size)
     model = get_module(args, data_shapes, label_shapes)
     i = 0
@@ -167,6 +170,7 @@ def predict(args):
     if check_layer is not None:
       caffe_blob = pickle.load(open('/home/guojinma/%s.pkl' % check_layer, 'rb'), encoding='latin1')[check_layer]
     #caffe_blob = pickle.load(open('/home/guojinma/data.pkl', 'rb'), encoding='latin1')['data']
+    embeddings = []
     for batch_data, batch_count in dataset:
       batch_end = batch_start + batch_count
       model.forward(batch_data, is_train=False)
@@ -184,13 +188,13 @@ def predict(args):
       #  print('%d %f' % (pd[idx], _embeddings[idx, pd[idx]]))
       #break      
 
-      if embeddings is None:
-        embeddings = np.zeros( (9302 * 2, _embeddings.shape[1]) )
-      embeddings[batch_start:batch_end,:] = _embeddings[args.batch_size-batch_count:, :]
+      embeddings.append(_embeddings[args.batch_size-batch_count:, :])
       batch_start = batch_end
       i += 1
       if i % 1000 == 0:
         print(i)
+    embeddings = np.concatenate(embeddings, 0)
+    print(embeddings.shape)
     scores = verification.calc_cos(embeddings[0::2, :], embeddings[1::2, :])
     
     fp_rates, fp_dict, thred_dict, recall_dict = verification.calc_pr(scores)

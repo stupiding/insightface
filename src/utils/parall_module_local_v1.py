@@ -144,7 +144,7 @@ class ParallModule(BaseModule):
       #  print('g', k, v.shape)
       #for k,v in ag.items():
       #  print('ag', k, v.shape)
-      self._curr_module.set_params(g, x)
+      self._curr_module.set_params(g, x, allow_missing=allow_missing)
       #self._arcface_module.set_params(ag, ax)
       self.params_initialized = True
 
@@ -166,7 +166,7 @@ class ParallModule(BaseModule):
                                         force_init=force_init, allow_extra=allow_extra)
         if arg_params is not None:
           print('Load pretrained model and set _curr_module')
-          self.set_params(arg_params, aux_params)
+          self.set_params(arg_params, aux_params, allow_missing=allow_missing)
           #self._curr_module.set_params(arg_params, aux_params)
         self.params_initialized = True
 
@@ -195,8 +195,9 @@ class ParallModule(BaseModule):
         _data_shape = data_shapes[0][1]
         print('_data_shape', _data_shape, label_shapes)
         for _module in self._arcface_modules:
-          _module.bind([('data', (_data_shape[0]*self._num_workers, self._emb_size))], [('softmax_label', (_data_shape[0]*self._num_workers,))], for_training, True,
-                      force_rebind=False, shared_module=None)
+          _module.bind([('data', (_data_shape[0]*self._num_workers, self._emb_size))], 
+                       [('softmax_label', (_data_shape[0]*self._num_workers,))], 
+                       for_training, True, force_rebind=False, shared_module=None)
         if self.params_initialized:
             self.set_params(arg_params, aux_params)
 

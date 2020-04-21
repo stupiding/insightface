@@ -53,10 +53,11 @@ def get_symbol(num_classes, num_layers, **kwargs):
     global bn_mom
     bn_mom = kwargs.get('bn_mom', 0.9)
     wd_mult = kwargs.get('wd_mult', 1.)
-    version_output = kwargs.get('version_output', 'GNAP')
+    net_output = kwargs.get('net_output', 'GDC') if 'net_output' in kwargs 
+                     else kwargs.get('version_output', 'GDC')
     use_global_stats = kwargs.get('use_global_stats', False)
-    assert version_output=='GDC' or version_output=='GNAP'
-    fc_type = version_output
+    assert net_output=='GDC' or net_output=='GNAP'
+    fc_type = net_output
     data = mx.symbol.Variable(name="data")
     data = data-127.5
     data = data*0.0078125

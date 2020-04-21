@@ -31,6 +31,8 @@ import numpy as np
 import symbol_utils
 import sklearn
 from shake_drop import *
+#from attention_block import BottleneckV2, AttentionBlock
+
 
 def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn', use_global_stats=False):
     if method == 'bn':
@@ -81,7 +83,6 @@ def Conv(**kwargs):
     #body = mx.sym.Convolution(weight = _weight, bias = _bias, **kwargs)
     body = mx.sym.Convolution(**kwargs)
     return body
-
 
 def Act(data, act_type, name):
     if act_type=='prelu':
@@ -579,6 +580,7 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
     pyramid_alpha = kwargs.get('pyramid_alpha', 0)
     stride_in_res = kwargs.get('stride_in_res', True)
     use_global_stats = kwargs.get('use_global_stats', False)
+    use_attention = kwargs.get('use_attention', False)
     print('use_global_stats: {}'.format(use_global_stats))
     print(version_se, version_input, version_output, version_unit, act_type)
     num_unit = len(units)
@@ -634,6 +636,14 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
           body = residual_unit(body, filter_list[i+1] + pyramid_alpha * j, (1,1), True, name='stage%d_unit%d' % (i+1, j+1),
             bottle_neck=bottle_neck, **kwargs)
           layer_num += 1
+      if use_attention:
+        attention = Conv(data=body, num_filter=filter_list[i+1]//16, kernel=(3,3), stride=(1,1), pad=(1,1),
+                                    name="stage%d_attention_conv1" % (i+1), workspace=workspace)
+        attention = Act(data=attention, act_type=act_type, name='stage%d_attention_relu1' % (i+1))
+        attention = Conv(data=attention, num_filter=1, kernel=(3,3), stride=(1,1), pad=(1,1),
+                                no_bias=True, name="stage%d_attention_conv2" % (i+1), workspace=workspace)
+        attention = mx.symbol.Activation(data=attention, act_type='sigmoid', name='stage%d_attention_sigmoid' % (i+1)) + 1
+        body = mx.sym.broadcast_mul(body, attention)
     assert layer_num - 1 == total_layers, 'layer_num = %d, total_layers = %d' % (layer_num, total_layers)
 
     fc1 = symbol_utils.get_fc1(body, num_classes, fc_type, use_global_stats=use_global_stats)

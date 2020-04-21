@@ -10,6 +10,7 @@ import fmobilefacenet
 import fnasnet
 import fpeleefacenet
 import fresnet
+import fresnest
 import fsmall
 import fspherenet
 import fxception
