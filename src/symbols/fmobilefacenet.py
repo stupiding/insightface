@@ -53,7 +53,7 @@ def get_symbol(num_classes, num_layers, **kwargs):
     global bn_mom
     bn_mom = kwargs.get('bn_mom', 0.9)
     wd_mult = kwargs.get('wd_mult', 1.)
-    net_output = kwargs.get('net_output', 'GDC') if 'net_output' in kwargs 
+    net_output = kwargs.get('net_output', 'GDC') if 'net_output' in kwargs \
                      else kwargs.get('version_output', 'GDC')
     use_global_stats = kwargs.get('use_global_stats', False)
     assert net_output=='GDC' or net_output=='GNAP'
