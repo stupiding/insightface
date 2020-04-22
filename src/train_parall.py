@@ -101,7 +101,9 @@ def get_symbol_arcface(args):
     #_weight_norm = mx.symbol.BlockGrad(_weight_norm)
     #_weight = mx.symbol.broadcast_div(_weight, _weight_norm, axis=1)
     nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d'%args._ctxid)
-    fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, normalize=True, num_hidden=args.ctx_num_classes, name='fc7_%d'%args._ctxid)
+    fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, num_hidden=args.ctx_num_classes,
+                                no_bias = True, normalize=True, name='fc7_%d'%args._ctxid)
+
     if config.loss_m1!=1.0 or config.loss_m2!=0.0 or config.loss_m3!=0.0:
       gt_one_hot = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = 1.0, off_value = 0.0)
       if config.loss_m1==1.0 and config.loss_m2==0.0:
@@ -123,6 +125,31 @@ def get_symbol_arcface(args):
         diff = margin_fc7_onehot - fc7_onehot
         fc7 = fc7+diff
     fc7 = fc7*config.loss_s
+  elif config.loss_name=='circle_loss':
+    nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d'%args._ctxid)
+    fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, num_hidden=args.ctx_num_classes,
+                                no_bias = True, normalize=True, name='fc7_%d'%args._ctxid)
+
+    gt_one_hot = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = 1.0, off_value = 0.0)
+    gt_reverse = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = -1.0, off_value = 1.0)
+
+    # an (ap) detached
+    fc7_detached = mx.sym.BlockGrad(fc7)
+    fc7_detached = fc_detached7 - gt_one_hot
+    scale_factor = fc_detached7 * gt_reverse + config.margin
+    # clip min to 0
+    scale_factor = mx.symbol.Activation(data=scale_factor, act_type='relu')
+
+    delta = gt_one_hot + config.margin * gt_reverse
+    margin_fc7 = fc7 - delta
+    fc7 = scale_factor * margin_fc7
+
+    # an (ap) not detached
+    """    
+    fc7 = fc7 - gt_one_hot
+    fc7 = mx.sym.square(fc7) - config.margin ** 2
+    fc7 = (fc7 * gt_reverse) * config.gamma
+    """
 
   out_list = []
   out_list.append(fc7)
@@ -223,6 +250,7 @@ def train_net(args):
         cutoff               = default.cutoff if config.data_cutoff else None,
         crop                 = default.crop if config.data_crop else None,
         mask                 = default.mask if config.data_mask else None,
+        gridmask             = default.gridmask if config.data_grid else None,
         #color_jittering      = config.data_color,
         #images_filter        = config.data_images_filter,
         loss_type            = args.loss,
