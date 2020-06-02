@@ -170,7 +170,7 @@ def parse_args():
   parser.add_argument('--incay', type=float, default=0.0, help='feature incay')
   parser.add_argument('--use-deformable', type=int, default=0, help='')
   parser.add_argument('--rand-mirror', type=int, default=1, help='')
-  parser.add_argument('--cutoff', type=int, default=0, help='')
+  parser.add_argument('--cutout', type=int, default=0, help='')
   parser.add_argument('--patch', type=str, default='0_0_96_112_0',help='')
   parser.add_argument('--lr-steps', type=str, default='', help='')
   parser.add_argument('--max-steps', type=int, default=0, help='')
@@ -850,7 +850,7 @@ def train_net(args):
           shuffle              = True,
           rand_mirror          = args.rand_mirror,
           mean                 = mean,
-          cutoff               = args.cutoff,
+          cutout               = args.cutout,
           c2c_threshold        = args.c2c_threshold,
           output_c2c           = args.output_c2c,
           c2c_mode             = args.c2c_mode,
@@ -875,7 +875,7 @@ def train_net(args):
             shuffle              = True,
             rand_mirror          = args.rand_mirror,
             mean                 = mean,
-            cutoff               = args.cutoff,
+            cutout               = args.cutout,
             c2c_threshold        = args.c2c_threshold,
             output_c2c           = args.output_c2c,
             c2c_mode             = args.c2c_mode,

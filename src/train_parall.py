@@ -150,6 +150,36 @@ def get_symbol_arcface(args):
     fc7 = mx.sym.square(fc7) - config.margin ** 2
     fc7 = (fc7 * gt_reverse) * config.gamma
     """
+  elif config.loss_name=='curricular_loss':
+    nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d'%args._ctxid)
+    fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, num_hidden=args.ctx_num_classes,
+                                no_bias = True, normalize=True, name='fc7_%d'%args._ctxid)
+
+    cos_theta = mx.sym.pick(fc7, gt_label, axis=1)
+    theta = mx.sym.arccos(cos_theta)
+    cos_theta_m = mx.sym.cos(theta + config.loss_m)
+
+    #Curricular.t = mx.sym.BlockGrad(cos_theta).mean() * 0.01 + (1 - 0.01) * Curricular.t
+    curricular_t = mx.symbol.Variable("curricular_t_%d"%args._ctxid, init=mx.init.Zero())
+    curricular_t = cos_theta.mean() * 8 * 0.01 + (1 - 0.01) * curricular_t
+    curricular_t = mx.sym.BlockGrad(curricular_t)
+
+
+    hard_example = fc7 * mx.sym.broadcast_add(fc7, curricular_t)
+    cos_theta_mm = mx.sym.expand_dims(cos_theta_m, 1)
+    hard_cond = mx.sym.broadcast_greater(fc7, cos_theta_mm)
+    fc7 = mx.sym.where(hard_cond, fc7, hard_example)
+
+    threshold = math.cos(math.pi - config.loss_m)
+    mm = math.sin(math.pi - config.loss_m) * config.loss_m
+    margin_cos = mx.sym.where(cos_theta > threshold, cos_theta_m, cos_theta - mm)
+    margin_cos = mx.sym.expand_dims(margin_cos, 1)
+    gt_one_hot = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = 1.0, off_value = 0.0)
+    margin_cos = mx.sym.broadcast_mul(gt_one_hot, margin_cos)
+    
+    fc7 = mx.sym.where(gt_one_hot, margin_cos, fc7)
+
+    fc7 = fc7*config.loss_s
 
   out_list = []
   out_list.append(fc7)
@@ -247,7 +277,7 @@ def train_net(args):
         shuffle              = True,
         rand_mirror          = config.data_rand_mirror,
         mean                 = mean,
-        cutoff               = default.cutoff if config.data_cutoff else None,
+        cutout               = default.cutout if config.data_cutout else None,
         crop                 = default.crop if config.data_crop else None,
         mask                 = default.mask if config.data_mask else None,
         gridmask             = default.gridmask if config.data_grid else None,

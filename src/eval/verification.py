@@ -250,7 +250,7 @@ def load_bin(path, image_size):
       y_end = y_off + image_size[0]
       x_end = x_off + image_size[1]
       data_list[flip][i][:] = img[:, y_off:y_end, x_off:x_end]
-    if i%1000==0:
+    if i%10000==0:
       print('loading bin', i)
   print(data_list[0].shape)
   return (data_list, issame_list)

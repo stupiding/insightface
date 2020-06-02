@@ -29,6 +29,8 @@ class ShakeDrop(mx.operator.CustomOp):
             self.assign(out_data[0], req[0], x * expected_prob)
 
     def backward(self, req, out_grad, in_data, out_data, in_grad, aux):
+        x = in_data[0]
+        shake_shape = [x.shape[0], 1, 1, 1]
         beta_values = mx.ndarray.random.uniform(
             low=self.beta[0], high=self.beta[1], 
             shape=shake_shape, dtype='float32', ctx=self.ctx)
@@ -58,7 +60,7 @@ class ShakeDropProp(mx.operator.CustomOpProp):
     def create_operator(self, ctx, shapes, dtypes):
         return ShakeDrop(ctx=ctx, prob=self.prob, alpha=self.alpha, beta=self.beta)
 
-if __name__ == '__main__':
+if __name__ == '__MMain__':
     import mxnet.symbol as ms
     x = ms.Variable('x', shape=(4,4,1,1))
     y = ms.Custom(data=x, prob=0.4, alpha=[-1, 1], beta=[0, 1], name='shakedrop', op_type='shakedrop')
@@ -69,6 +71,5 @@ if __name__ == '__main__':
     
     ex.forward(is_train=True)
     ex.backward(is_train=True)
-    print('number of outputs = %d\nthe first output = \n%s' % (
-               len(ex.outputs), ex.outputs[0].asnumpy()))
-    
+    #print('number of outputs = %d\nthe first output = \n%s' % (
+    #           len(ex.outputs), ex.outputs[0].asnumpy()))

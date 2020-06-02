@@ -57,7 +57,7 @@ class Grid(object):
             mask = 1-mask
 
         mask = np.expand_dims(mask, 2).astype('float32')
-        mask = mx.ndarray.from_numpy(mask).astype('uint8')
+        mask = mx.ndarray.from_numpy(mask)
         img = img * mask 
 
         return img
@@ -82,5 +82,5 @@ if __name__ == '__main__':
   grid = GridMask(d1=48, d2=112, rotate=90, ratio=0.6, mode=1, prob=1.0)
   im = cv2.imread('test.jpg')
   rim = cv2.resize(im, (112, 112), interpolation=cv2.INTER_CUBIC)
-  res = grid.process(rim)
-  cv2.imwrite('res.jpg', res)
+  res = grid.process(mx.nd.array(rim))
+  cv2.imwrite('res.jpg', res.asnumpy().astype('uint8'))

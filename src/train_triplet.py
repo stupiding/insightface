@@ -86,7 +86,7 @@ def parse_args():
   parser.add_argument('--loss-type', type=int, default=12, help='')
   parser.add_argument('--use-deformable', type=int, default=0, help='')
   parser.add_argument('--rand-mirror', type=int, default=1, help='')
-  parser.add_argument('--cutoff', type=int, default=0, help='')
+  parser.add_argument('--cutout', type=int, default=0, help='')
   parser.add_argument('--patch', type=str, default='0_0_96_112_0',help='')
   parser.add_argument('--lr-steps', type=str, default='', help='')
   parser.add_argument('--max-steps', type=int, default=0, help='')
@@ -261,7 +261,7 @@ def train_net(args):
         shuffle              = True,
         rand_mirror          = args.rand_mirror,
         mean                 = mean,
-        cutoff               = args.cutoff,
+        cutout               = args.cutout,
         ctx_num              = args.ctx_num,
         images_per_identity  = args.images_per_identity,
         triplet_params       = triplet_params,

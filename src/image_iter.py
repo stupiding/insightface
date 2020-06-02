@@ -24,14 +24,15 @@ from mxnet import recordio
 
 logger = logging.getLogger()
 from utils import init_random
-
+from augments.common import common_aug
 
 class FaceImageIter(io.DataIter):
     def __init__(self, batch_size, data_shape,
                  path_imgrecs = None,
                  shuffle=False, aug_list=None, mean = None,
-                 rand_mirror = False, cutoff = None, crop = None, mask = None,
+                 rand_mirror = False, cutout = None, crop = None, mask = None, gridmask = None,
                  downsample_back = 0.0, motion_blur = 0.0,
+                 mx_model = None,
                  data_names=['data'], label_name='softmax_label', **kwargs):
         super(FaceImageIter, self).__init__()
         assert path_imgrecs
@@ -71,20 +72,14 @@ class FaceImageIter(io.DataIter):
         self.iteration = 0
         self.margin_policy = self.kwargs.get('margin_policy', 'step')
         self.use_bgr = self.kwargs.get('use_bgr', False)
-        self.mean = mean
-        self.nd_mean = None
-        if self.mean:
-          self.mean = np.array(self.mean, dtype=np.float32).reshape(1,1,3)
-          self.nd_mean = mx.nd.array(self.mean).reshape((1,1,3))
 
-        if motion_blur > 0:
-          self.load_motion_kernel()
+        self.mx_model = mx_model
 
         self.check_data_shape(data_shape)
         if crop is not None:
             crop_h, crop_w = crop.crop_h, crop.crop_w
             data_shape = (data_shape[0], crop_h, crop_w)
-        if self.kwargs['loss_type'] == 6:
+        if 'loss_type' in self.kwargs and self.kwargs['loss_type'] == 6:
           self.provide_data = [(data_names[0], (batch_size,) + data_shape), (data_names[1], (batch_size,))]
         else:
           self.provide_data = [(data_names[0], (batch_size,) + data_shape)]
@@ -92,13 +87,10 @@ class FaceImageIter(io.DataIter):
         self.data_shape = data_shape
         self.shuffle = shuffle
         self.image_size = '%d,%d'%(data_shape[1],data_shape[2])
-        self.rand_mirror = rand_mirror
+        self.augs = common_aug(rand_mirror = rand_mirror, cutout = cutout, crop = crop,
+                  mask = mask, gridmask = gridmask, downsample_back = downsample_back, motion_blur = motion_blur, mean = mean)
+
         print('rand_mirror: {}'.format( rand_mirror))
-        self.cutoff = cutoff
-        self.crop = crop
-        self.mask = mask
-        self.downsample_back = downsample_back
-        self.motion_blur = motion_blur
         self.provide_label = [(label_name, (batch_size, self.rec_num))]
         #self.provide_label = [(label_name, (batch_size, self.rec_num))] if self.rec_num > 1 else [(label_name, (batch_size, ))]
         #print(self.provide_label[0][1])
@@ -164,72 +156,6 @@ class FaceImageIter(io.DataIter):
               label = label[0]
             return label, img, None, None
 
-    def brightness_aug(self, src, x):
-      alpha = 1.0 + random.uniform(-x, x)
-      src *= alpha
-      return src
-
-    def contrast_aug(self, src, x):
-      alpha = 1.0 + random.uniform(-x, x)
-      coef = np.array([[[0.299, 0.587, 0.114]]])
-      gray = src * coef
-      gray = (3.0 * (1.0 - alpha) / gray.size) * np.sum(gray)
-      src *= alpha
-      src += gray
-      return src
-
-    def saturation_aug(self, src, x):
-      alpha = 1.0 + random.uniform(-x, x)
-      coef = np.array([[[0.299, 0.587, 0.114]]])
-      gray = src * coef
-      gray = np.sum(gray, axis=2, keepdims=True)
-      gray *= (1.0 - alpha)
-      src *= alpha
-      src += gray
-      return src
-
-    def color_aug(self, img, x):
-      augs = [self.brightness_aug, self.contrast_aug, self.saturation_aug]
-      random.shuffle(augs)
-      for aug in augs:
-        #print(img.shape)
-        img = aug(img, x)
-        #print(img.shape)
-      return img
-
-    def mirror_aug(self, img):
-      _rd = random.randint(0,1)
-      if _rd==1:
-        for c in range(img.shape[2]):
-          img[:,:,c] = np.fliplr(img[:,:,c])
-      return img
-
-    def load_motion_kernel(self):
-      fs = cv2.FileStorage('resources/blur_kernels_13.xml', cv2.FILE_STORAGE_READ)
-      kernel_number = int(fs.getNode('kernel_number').real())
-      kernel_size = int(fs.getNode('kernel_size').real())
-      kernel_prefix = fs.getNode('kernel_prefix').string()
-      self.kernels = []
-      for i in range(kernel_number):
-        self.kernels.append(fs.getNode(kernel_prefix + '_' + str(i)).mat())
-      
-    def motion_aug(self, img):
-      if random.random() < self.motion_blur:
-        kernel_index = random.randint(0, len(self.kernels)-1)
-        blurred_img = cv2.filter2D(img, -1, self.kernels[kernel_index])
-        return blurred_img
-      else:
-        return img
-
-    def downsample_aug(self, img):
-      if random.random() < self.downsample_back:
-        sizes = [(size, size) for size in range(32, 112, 16)][::-1]
-        downsample_index = random.randint(0, len(sizes) - 1)
-        downsampled_img = cv2.resize(img, sizes[downsample_index])
-        return cv2.resize(downsampled_img, img.shape[:2])
-      else:
-        return img
-
     def next(self):
         if not self.is_init:
           self.reset()
@@ -256,75 +182,16 @@ class FaceImageIter(io.DataIter):
                   label = _label
                 dataset_idx = (dataset_idx + 1) % self.rec_num
                 _data = self.imdecode(s)
-                if self.rand_mirror:
-                  _rd = random.randint(0,1)
-                  if _rd==1:
-                    _data = mx.ndarray.flip(data=_data, axis=1)
-                _data = self.augmentation_transform(_data)
-                if self.crop is not None:
-                    crop_h, crop_w = self.crop.crop_h, self.crop.crop_w
-                    hrange, wrange = self.crop.hrange, self.crop.wrange
 
-                    img_h, img_w = _data.shape[:2]
-                    assert crop_h <= img_h and crop_w <= img_w
+                _data = self.augs.apply(_data)
 
-                    full_hrange, full_wrange = img_h - crop_h, img_w - crop_w
-                    if hrange == -1:
-                        h_off = random.randint(0, full_hrange)
-                    else:
-                        cur_range = min(full_hrange // 2, hrange)
-                        h_off = random.randint(-cur_range, cur_range) + full_hrange // 2
-                    if wrange == -1:
-                        w_off = random.randint(0, full_wrange)
-                    else:
-                        cur_range = min(full_wrange // 2, hrange)
-                        w_off = random.randint(-cur_range, cur_range) + full_wrange // 2
-                    _data = _data[h_off:h_off+crop_h, w_off:w_off+crop_w, :]
-                if self.cutoff is not None:
-                    cutoff_ratio = self.cutoff.ratio
-                    cutoff_size = self.cutoff.size
-                    cutoff_mode = self.cutoff.mode
-                    cutoff_filler = self.cutoff.filler
-                    if random.random() < cutoff_ratio:
-                        if cutoff_mode == 'fixed':
-                            None
-                        elif cutoff_mode == 'uniform':
-                            cutoff_size = random.randint(1, cutoff_size)
-                        centerh = random.randint(0, _data.shape[0]-1)
-                        centerw = random.randint(0, _data.shape[1]-1)
-                        half = cutoff_size//2
-                        starth = max(0, centerh-half)
-                        endh = min(_data.shape[0], centerh+half)
-                        startw = max(0, centerw-half)
-                        endw = min(_data.shape[1], centerw+half)
-                        _data = _data.astype('float32')
-                        if cutoff_filler > 0:
-                            _data[starth:endh, startw:endw, :] = cutoff_filler
-                        else:
-                            # random init
-                            _data[starth:endh, startw:endw, :] = random.random() * 255
-                if self.mask is not None:
-                    img_h, img_w = _data.shape[:2]
-
-                    mask_ratio = self.mask.ratio
-                    mask_size = int(img_h * self.mask.size)
-                    mask_value = self.mask.value
-                    if random.random() < cutoff_ratio:
-                        _data[-mask_size:, :, :] = mask_value
-                
-                if self.nd_mean is not None:
-                    _data = _data.astype('float32')
-                    _data -= self.nd_mean
-                    _data *= 0.0078125
                 data = [_data]
                 try:
                     self.check_valid_image(data)
                 except RuntimeError as e:
                     logging.debug('Invalid image, skipping:  %s', str(e))
                     continue
-                #print('aa',data[0].shape)
-                #data = self.augmentation_transform(data)
-                #print('bb',data[0].shape)
+
                 for datum in data:
                     assert i < batch_size, 'Batch size must be multiples of augmenter output length'
                     #print(datum.shape)
@@ -334,6 +201,12 @@ class FaceImageIter(io.DataIter):
         except StopIteration:
             if i<batch_size:
                 raise StopIteration
+
+        #db = mx.io.DataBatch(data=(batch_data,))
+        #self.mx_model.forward(db, is_train=False)
+        #net_out = self.mx_model.get_outputs()
+
+        #print(net_out)
         self.iteration += 1
         return io.DataBatch([batch_data], [batch_label], batch_size - i)
 
@@ -368,22 +241,10 @@ class FaceImageIter(io.DataIter):
 
     def augmentation_transform(self, data):
         """Transforms input data with specified augmentation."""
-        if self.motion_blur > 0 or self.downsample_back > 0:
-            data = data.asnumpy()
-            if self.motion_blur > 0:
-                data = self.motion_aug(data)
-            if self.downsample_back > 0:
-                data = self.downsample_aug(data)
-            return mx.nd.array(data)
-        else:
-            return data
-
-        """
         for aug in self.auglist:
             data = [ret for src in data for ret in aug(src)]
         
         return data
-        """
 
     def postprocess_data(self, datum):
         """Final postprocessing step before image is loaded into the batch."""
@@ -413,4 +274,27 @@ class FaceImageIterList(io.DataIter):
         continue
       return ret
 
+if __name__ == '__main__':
+  import config
+  train_dataiter = FaceImageIter(
+      batch_size           = 32,
+      data_shape           = (3, 112, 112),
+      path_imgrecs         = ['../datasets/faces_emore/train.rec'],
+      shuffle              = True,
+      rand_mirror          = True,
+      mean                 = None,
+      cutout               = config.cutout,
+      crop                 = config.crop,
+      mask                 = config.mask,
+      gridmask             = config.gridmask,
+      data_names           = ['data'],
+      downsample_back      = config.config.downsample_back,
+      motion_blur          = config.config.motion_blur,
+      use_bgr              = config.config.use_bgr
+  )
 
+  batch = train_dataiter.next()
+  data = batch.data[0].asnumpy()
+  for i in range(32):
+    img_data = data[i, ...].transpose([1, 2, 0])[:, :, ::-1]
+    cv2.imwrite('temp/%d.png' % i, img_data)

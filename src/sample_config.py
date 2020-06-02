@@ -21,7 +21,7 @@ config.fc7_wd_mult = 1.0
 config.fc7_no_bias = False
 config.max_steps = 0
 config.data_rand_mirror = True
-config.data_cutoff = False
+config.data_cutout = False
 config.data_color = 0
 config.data_images_filter = 0
 

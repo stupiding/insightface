@@ -10,7 +10,6 @@ import logging
 import pickle
 import numpy as np
 from image_iter import FaceImageIter
-from image_iter import FaceImageIterList
 import mxnet as mx
 from mxnet import ndarray as nd
 import argparse
@@ -108,9 +107,10 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
       name += '_sub%d'
       cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip().split(',')
       classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
+    args.ctx_num_classes = classes_each_ctx
 
     if args.loss_type==0: #softmax
-      fc7 = Softmax(embedding, gt_label, classes_each_ctx, name, args, cvd)
+      fc7 = Softmax(embedding, gt_label, name, args, cvd)
     elif args.loss_type==1: #sphere
       _weight = mx.symbol.L2Normalization(_weight, mode='instance')
       fc7 = mx.sym.LSoftmax(data=embedding, label=gt_label, num_hidden=args.num_classes[i],
@@ -118,13 +118,13 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
                             beta=args.beta, margin=args.margin, scale=args.scale,
                             beta_min=args.beta_min, verbose=1000, name='fc7_%d' % i)
     elif args.loss_type==2:
-      fc7 = CosFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
+      fc7 = CosFace(embedding, gt_label, name, args, cvd)
     elif args.loss_type==4:
-      fc7 = ArcFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
+      fc7 = ArcFace(embedding, gt_label, name, args, cvd)
     elif args.loss_type==5:
-      fc7 = CombineFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
+      fc7 = CombineFace(embedding, gt_label, name, args, cvd)
     elif args.loss_type==6: # linear margin m
-      fc7 = LarcFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
+      fc7 = LarcFace(embedding, gt_label, name, args, cvd)
 
     if i == 0:
       out_list = [mx.symbol.BlockGrad(embedding)]
@@ -163,12 +163,16 @@ def train_net(args):
     path_imgrecs = []
     path_imglist = None
     args.num_classes = []
-    for data_dir in data_dir_list:
+    for data_idx, data_dir in enumerate(data_dir_list):
       prop = face_image.load_property(data_dir)
       args.num_classes.append(prop.num_classes)
       image_size = prop.image_size
-      args.image_h = image_size[0]
-      args.image_w = image_size[1]
+      if data_idx == 0:
+        args.image_h = image_size[0]
+        args.image_w = image_size[1]
+      else:
+        args.image_h = min(args.image_h, image_size[0]) 
+        args.image_w = min(args.image_w, image_size[1])
       print('image_size', image_size)
       assert(args.num_classes[-1]>0)
       print('num_classes', args.num_classes)
@@ -208,11 +212,8 @@ def train_net(args):
     )
     val_dataiter = None
 
-    cutoff = edict()
-    cutoff.ratio = 0.3
-    cutoff.size = 32
-    cutoff.mode = 'fixed' # 'uniform'
-    cutoff.filler = 127.5
+    from config import crop
+    from config import cutout
 
     train_dataiter = FaceImageIter(
         batch_size           = args.batch_size,
@@ -221,7 +222,8 @@ def train_net(args):
         shuffle              = True,
         rand_mirror          = args.rand_mirror,
         mean                 = mean,
-        cutoff               = cutoff,
+        cutout               = cutout,
+        crop                 = crop, 
         loss_type            = args.loss_type,
         #margin_m             = args.margin_m,
         #margin_policy        = args.margin_policy,
@@ -253,6 +255,7 @@ def train_net(args):
     ver_list = []
     ver_name_list = []
     """
+    """
     for name in args.target.split(','):
       path = os.path.join(data_dir,name+".bin")
       if os.path.exists(path):
@@ -260,7 +263,6 @@ def train_net(args):
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
-    """
 
 
 

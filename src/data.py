@@ -59,7 +59,7 @@ class FaceImageIter(io.DataIter):
     def __init__(self, batch_size, data_shape,
                  path_imgrec = None,
                  shuffle=False, aug_list=None, mean = None,
-                 rand_mirror = False, cutoff = 0,
+                 rand_mirror = False, cutout = 0,
                  c2c_threshold = 0.0, output_c2c = 0, c2c_mode = -10, limit = 0,
                  ctx_num = 0, images_per_identity = 0, data_extra = None, hard_mining = False, 
                  triplet_params = None, coco_mode = False,
@@ -232,7 +232,7 @@ class FaceImageIter(io.DataIter):
         self.image_size = '%d,%d'%(data_shape[1],data_shape[2])
         self.rand_mirror = rand_mirror
         print('rand_mirror', rand_mirror)
-        self.cutoff = cutoff
+        self.cutout = cutout
         #self.cast_aug = mx.image.CastAug()
         #self.color_aug = mx.image.ColorJitterAug(0.4, 0.4, 0.4)
         self.ctx_num = ctx_num 
@@ -880,10 +880,10 @@ class FaceImageIter(io.DataIter):
                     _data = _data.astype('float32')
                     _data -= self.nd_mean
                     _data *= 0.0078125
-                if self.cutoff>0:
+                if self.cutout>0:
                   centerh = random.randint(0, _data.shape[0]-1)
                   centerw = random.randint(0, _data.shape[1]-1)
-                  half = self.cutoff//2
+                  half = self.cutout//2
                   starth = max(0, centerh-half)
                   endh = min(_data.shape[0], centerh+half)
                   startw = max(0, centerw-half)

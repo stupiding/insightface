@@ -65,39 +65,6 @@ def get_module(args, data_shapes, label_shapes):
     cvd, name = None, 'fc7_dt%d' % i
     classes_each_ctx = args.num_classes[i]
 
-    """
-    name = 'fc7_%d' 
-    classes_each_ctx = (args.num_classes[i] + 7) // 8
-
-    fc7_subs = []
-    for ctx_id in range(8):
-      _weight = mx.symbol.Variable(name % ctx_id + "_weight", shape=(classes_each_ctx, args.emb_size))
-      if args.fc7_no_bias:
-        fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, no_bias = True, num_hidden=classes_each_ctx, name=name % ctx_id)
-      else:
-        _bias = mx.symbol.Variable(name % ctx_id + '_bias', lr_mult=2.0, wd_mult=0.0)
-        fc7_sub = mx.sym.FullyConnected(data=embedding, weight = _weight, bias = _bias, num_hidden=classes_each_ctx, name=name % ctx_id)
-      fc7_subs.append(fc7_sub)
-    fc7 = mx.sym.concat(*fc7_subs, dim=1, name=name + '_concat')
-    """
-    #if args.loss_type==0: #softmax
-    #  fc7 = Softmax(embedding, gt_label, classes_each_ctx, name, args, cvd)
-    #fc7 = Softmax(embedding, None, classes_each_ctx, name, args, cvd)
-    #elif args.loss_type==1: #sphere
-    #  _weight = mx.symbol.L2Normalization(_weight, mode='instance')
-    #  fc7 = mx.sym.LSoftmax(data=embedding, label=gt_label, num_hidden=classes_each_ctx,
-    #                        weight = _weight,
-    #                        beta=args.beta, margin=args.margin, scale=args.scale,
-    #                        beta_min=args.beta_min, verbose=1000, name='fc7_%d' % i)
-    #elif args.loss_type==2:
-    #  fc7 = CosFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
-    #elif args.loss_type==4:
-    #  fc7 = ArcFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
-    #elif args.loss_type==5:
-    #  fc7 = CombineFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
-    #elif args.loss_type==6: # linear margin m
-    #  fc7 = LarcFace(embedding, gt_label, classes_each_ctx, name, args, cvd)
-
     if i == 0:
       out_list = [mx.symbol.BlockGrad(embedding)]
     #softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax_%d' % i, normalization='valid', use_ignore=True)
