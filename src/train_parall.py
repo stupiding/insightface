@@ -135,8 +135,8 @@ def get_symbol_arcface(args):
 
     # an (ap) detached
     fc7_detached = mx.sym.BlockGrad(fc7)
-    fc7_detached = fc_detached7 - gt_one_hot
-    scale_factor = fc_detached7 * gt_reverse + config.margin
+    fc7_detached = fc7_detached - gt_one_hot
+    scale_factor = fc7_detached * gt_reverse + config.margin
     # clip min to 0
     scale_factor = mx.symbol.Activation(data=scale_factor, act_type='relu')
 
