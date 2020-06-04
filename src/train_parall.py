@@ -330,7 +330,7 @@ def train_net(args):
       for i in range(len(ver_list)):
         _, issame_list = ver_list[i]
         if all(issame_list):
-          fp_rates, fp_dict, thred_dict, recall_dict = verification.test(ver_list[i], model, args.batch_size, use_bgr=config.use_bgr)
+          fp_rates, fp_dict, thred_dict, recall_dict = verification.test(ver_list[i], model, args.batch_size, use_bgr=config.use_bgr, label_shape = (args.batch_size, len(path_imgrecs)))
           for k in fp_rates:
             print("[%s] TPR at FPR %.2e[%.2e: %.4f]:\t%.5f" %(ver_name_list[i], k, fp_dict[k], thred_dict[k], recall_dict[k]))
 
