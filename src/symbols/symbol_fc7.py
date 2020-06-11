@@ -167,23 +167,16 @@ def CircleLoss(embedding, gt_label, name, args, cvd=None):
   gt_one_hot = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = 1.0, off_value = 0.0)
   gt_reverse = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = -1.0, off_value = 1.0)
 
-  # an (ap) detached
+  # calculate alpha
   fc7_detached = mx.sym.BlockGrad(fc7)
-  fc7_detached = fc_detached7 - gt_one_hot
-  scale_factor = fc_detached7 * gt_reverse + args.margin
-  # clip min to 0
-  scale_factor = mx.symbol.Activation(data=scale_factor, act_type='relu')
+  alpha = fc_detached7 * gt_reverse + gt_one_hot + args.margin
+  alpha_relu = mx.symbol.Activation(data=alpha, act_type='relu')
 
+  # calculate delta
   delta = gt_one_hot + args.margin * gt_reverse
-  margin_fc7 = fc7 - delta
-  fc7 = scale_factor * margin_fc7
 
-  # an (ap) not detached
-  """    
-  fc7 = fc7 - gt_one_hot
-  fc7 = mx.sym.square(fc7) - args.margin ** 2
-  fc7 = (fc7 * gt_reverse) * args.gamma
-  """
+  fc7 = args.gamma * alpha_relu * (fc7 - delta)
+
   return fc7
 
 def CurricularLoss(embedding, gt_label, name, args, cvd=None):
