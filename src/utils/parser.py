@@ -7,7 +7,7 @@ def parse_args():
   parser.add_argument('--prefix', default='../model/model', help='directory to save model.')
   parser.add_argument('--pretrained', default='', help='pretrained model to load')
   parser.add_argument('--ckpt', type=int, default=1, help='checkpoint saving option. 0: discard saving. 1: save when necessary. 2: always save')
-  parser.add_argument('--loss-type', type=int, default=4, help='loss type')
+  parser.add_argument('--loss-type', type=str, default="arcface", help='loss type')
   parser.add_argument('--verbose', type=int, default=2000, help='do verification testing and model saving every verbose batches')
   parser.add_argument('--max-steps', type=int, default=0, help='max training batches')
   parser.add_argument('--end-epoch', type=int, default=100000, help='training epoch size.')

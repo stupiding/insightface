@@ -6,7 +6,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from pair_image_iter import FaceImageIter
+#from pair_image_iter import FaceImageIter
+from image_iter import FaceImageIter
 
 import pdb
 import os, sys
@@ -135,26 +136,20 @@ def get_symbol_arcface(args):
 
     # an (ap) detached
     fc7_detached = mx.sym.BlockGrad(fc7)
-    fc7_detached = fc7_detached - gt_one_hot
-    scale_factor = fc7_detached * gt_reverse + config.margin
-    # clip min to 0
-    scale_factor = mx.symbol.Activation(data=scale_factor, act_type='relu')
+    alpha = fc7_detached * gt_reverse + gt_one_hot + config.margin
+    alpha_relu = mx.symbol.Activation(data=alpha, act_type='relu')
 
+    # calculate delta
     delta = gt_one_hot + config.margin * gt_reverse
-    margin_fc7 = fc7 - delta
-    fc7 = scale_factor * margin_fc7
 
-    # an (ap) not detached
-    """    
-    fc7 = fc7 - gt_one_hot
-    fc7 = mx.sym.square(fc7) - config.margin ** 2
-    fc7 = (fc7 * gt_reverse) * config.gamma
-    """
+    fc7 = config.gamma * alpha_relu * (fc7 - delta)
+
   elif config.loss_name=='curricular_loss':
     nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n_%d'%args._ctxid)
     fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, num_hidden=args.ctx_num_classes,
                                 no_bias = True, normalize=True, name='fc7_%d'%args._ctxid)
 
+    """
     cos_theta = mx.sym.pick(fc7, gt_label, axis=1)
     theta = mx.sym.arccos(cos_theta)
     cos_theta_m = mx.sym.cos(theta + config.loss_m)
@@ -180,6 +175,10 @@ def get_symbol_arcface(args):
     fc7 = mx.sym.where(gt_one_hot, margin_cos, fc7)
 
     fc7 = fc7*config.loss_s
+    """
+    from gluon_modules import CurricularModule
+    mod = CurricularModule(args.ctx_num_classes, config.loss_m, config.loss_s, args._ctxid)
+    fc7 = mod(fc7, gt_label)
 
   out_list = []
   out_list.append(fc7)

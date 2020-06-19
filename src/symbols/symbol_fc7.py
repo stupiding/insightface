@@ -95,6 +95,14 @@ def ArcFace(embedding, gt_label, name, args, cvd=None):
   fc7 = (fc7 + body) * s
   return fc7
 
+def AdaCos(embedding, gt_label, name, args, cvd=None):
+  fc7 = get_fc7(embedding, name, args, cvd)
+
+  from gluon_modules import AdaCosModule
+  mod = AdaCosModule(args.ctx_num_classes)
+  fc7 = mod(fc7)
+  return fc7
+
 def CombineFace(embedding, gt_label, name, args, cvd=None):
   s = args.margin_s
   m = args.margin_m
@@ -169,51 +177,21 @@ def CircleLoss(embedding, gt_label, name, args, cvd=None):
 
   # an (ap) detached
   fc7_detached = mx.sym.BlockGrad(fc7)
-  fc7_detached = fc_detached7 - gt_one_hot
-  scale_factor = fc_detached7 * gt_reverse + args.margin
-  # clip min to 0
-  scale_factor = mx.symbol.Activation(data=scale_factor, act_type='relu')
+  alpha = fc7_detached * gt_reverse + gt_one_hot + config.margin
+  alpha_relu = mx.symbol.Activation(data=alpha, act_type='relu')
 
-  delta = gt_one_hot + args.margin * gt_reverse
-  margin_fc7 = fc7 - delta
-  fc7 = scale_factor * margin_fc7
+  # calculate delta
+  delta = gt_one_hot + config.margin * gt_reverse
 
-  # an (ap) not detached
-  """    
-  fc7 = fc7 - gt_one_hot
-  fc7 = mx.sym.square(fc7) - args.margin ** 2
-  fc7 = (fc7 * gt_reverse) * args.gamma
-  """
+  fc7 = config.gamma * alpha_relu * (fc7 - delta)
   return fc7
 
 def CurricularLoss(embedding, gt_label, name, args, cvd=None):
   fc7 = get_fc7(embedding, name, args, cvd)
 
-  cos_theta = mx.sym.pick(fc7, gt_label, axis=1)
-  theta = mx.sym.arccos(cos_theta)
-  cos_theta_m = mx.sym.cos(theta + args.loss_m)
-
-  #Curricular.t = mx.sym.BlockGrad(cos_theta).mean() * 0.01 + (1 - 0.01) * Curricular.t
-  curricular_t = mx.symbol.Variable("curricular_t_%d"%args._ctxid, init=mx.init.Zero())
-  curricular_t = cos_theta.mean() * 8 * 0.01 + (1 - 0.01) * curricular_t
-  curricular_t = mx.sym.BlockGrad(curricular_t)
-
-
-  hard_example = fc7 * mx.sym.broadcast_add(fc7, curricular_t)
-  cos_theta_mm = mx.sym.expand_dims(cos_theta_m, 1)
-  hard_cond = mx.sym.broadcast_greater(fc7, cos_theta_mm)
-  fc7 = mx.sym.where(hard_cond, fc7, hard_example)
-
-  threshold = math.cos(math.pi - args.loss_m)
-  mm = math.sin(math.pi - args.loss_m) * config.loss_m
-  margin_cos = mx.sym.where(cos_theta > threshold, cos_theta_m, cos_theta - mm)
-  margin_cos = mx.sym.expand_dims(margin_cos, 1)
-  gt_one_hot = mx.sym.one_hot(gt_label, depth = args.ctx_num_classes, on_value = 1.0, off_value = 0.0)
-  margin_cos = mx.sym.broadcast_mul(gt_one_hot, margin_cos)
-  
-  fc7 = mx.sym.where(gt_one_hot, margin_cos, fc7)
-
-  fc7 = fc7*args.loss_s
+  from gluon_modules import CurricularModule
+  mod = CurricularModule(args.ctx_num_classes, args.loss_m, args.loss_s, args._ctxid)
+  fc7 = mod(fc7)
   return fc7
 
 def MarginDistillation(embedding, gt_label, name, args, cvd=None):

@@ -123,7 +123,8 @@ class common_aug():
       cutout_size = self.cutout.size
       cutout_mode = self.cutout.mode
       cutout_filler = self.cutout.filler
-      if random.random() < cutout_ratio:
+      rand_v = random.random()
+      if rand_v < cutout_ratio:
         if cutout_mode == 'fixed':
           None
         elif cutout_mode == 'uniform':
