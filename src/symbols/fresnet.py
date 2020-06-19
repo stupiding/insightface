@@ -125,7 +125,9 @@ def block_head(shortcut, trunk, dim_match, num_filter, stride, name, resnet_v2, 
     #shake_drop
     if shake_drop:
         prob = kwargs.get('prob', 1)
-        trunk = mx.sym.Custom(data=bn3, prob=prob, alpha=[-1, 1], beta=[0, 1], name=name+'_shakedrop', op_type='shakedrop')
+        shakedrop_module = ShakeDrop(prob=prob, alpha=(-1, 1), beta=(0, 1))
+        trunk = shakedrop_module(trunk)
+        #trunk = mx.sym.Custom(data=trunk, prob=prob, alpha=[-1, 1], beta=[0, 1], name=name+'_shakedrop', op_type='shakedrop')
     else:
         trunk = trunk
 
@@ -566,6 +568,8 @@ def get_symbol(num_classes, num_layers, **kwargs):
     kwargs['total_layers'] = sum(units)
     width_mult = kwargs.get('width_mult', 1)
     filter_list = [int(c * width_mult) for c in filter_list]
+    shake_drop = kwargs.get('shake_drop', False)
+    print('use shake_drop: ', shake_drop)
 
     pyramid_alpha = kwargs.get('pyramid_alpha', 0)
     if pyramid_alpha > 0:
