@@ -83,4 +83,4 @@ if __name__ == '__main__':
   im = cv2.imread('test.jpg')
   rim = cv2.resize(im, (112, 112), interpolation=cv2.INTER_CUBIC)
   res = grid.process(mx.nd.array(rim))
-  cv2.imwrite('res.jpg', res.asnumpy().astype('uint8'))
+  cv2.imwrite('grid.jpg', res.asnumpy().astype('uint8'))

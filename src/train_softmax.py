@@ -2,29 +2,33 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-import sys
-import math
-import random
+import os, sys
+import math, random
 import logging
 import pickle
+import sklearn
 import numpy as np
-from image_iter import FaceImageIter
+from easydict import EasyDict as edict
+
 import mxnet as mx
 from mxnet import ndarray as nd
-import argparse
 import mxnet.optimizer as optimizer
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
-import face_image
 sys.path.append(os.path.join(os.path.dirname(__file__), 'eval'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'symbols'))
-from utils.adabound import AdaBound
-from utils.parser import parse_args
+
+import face_image
+import verification
+from image_iter import FaceImageIter
+
+from metrics import *
 from networks import *
 from symbol_fc7 import *
-import verification
-import sklearn
-from easydict import EasyDict as edict
+
+from utils.adabound import AdaBound
+from utils.parser import parse_args
+
 #sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
 #import center_loss
 
@@ -32,48 +36,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 args = None
-
-class AccMetric(mx.metric.EvalMetric):
-  def __init__(self):
-    self.axis = 1
-    super(AccMetric, self).__init__(
-        'acc', axis=self.axis,
-        output_names=None, label_names=None)
-    self.losses = []
-    self.count = 0
-
-  def update(self, labels_ls, preds_ls):
-    self.count+=1
-    labels = [labels_ls[0][:, i] for i in range(len(preds_ls) - 1)] if len(preds_ls) > 2 else labels_ls
-    for label, pred_label in zip(labels, preds_ls[1:]):
-        if pred_label.shape != label.shape:
-            pred_label = mx.ndarray.argmax(pred_label, axis=self.axis)
-        pred_label = pred_label.asnumpy().astype('int32').flatten()
-        label = label.asnumpy()
-        if label.ndim==2:
-            label = label[:,0]
-        label = label.astype('int32').flatten()
-        assert label.shape==pred_label.shape
-        pred_label, label = pred_label.flat, label.flat
-        #valid_ids = np.argwhere(label.asnumpy() != -1)
-        self.sum_metric += (pred_label == label).sum()
-        self.num_inst += len(pred_label)
-
-class LossValueMetric(mx.metric.EvalMetric):
-  def __init__(self):
-    self.axis = 1
-    super(LossValueMetric, self).__init__(
-        'lossvalue', axis=self.axis,
-        output_names=None, label_names=None)
-    self.losses = []
-
-  def update(self, labels, preds):
-    print(labels[0].shape, preds[0].shape)
-    loss = preds[-1].asnumpy()[0]
-    self.sum_metric += loss
-    self.num_inst += 1.0
-    gt_label = preds[-2].asnumpy()
-    #print(gt_label)
 
 def get_symbol(network, num_layers, args, arg_params, aux_params):
   data_shape = (args.image_channel,args.image_h,args.image_w)
@@ -103,28 +65,32 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
     cvd, name = None, 'fc7_dt%d' % i
     classes_each_ctx = args.num_classes[i]
     print('use Parallel or not: {}'.format(args.parallel))
+
     if args.parallel:
       name += '_sub%d'
       cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip().split(',')
       classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
     args.ctx_num_classes = classes_each_ctx
 
-    if args.loss_type==0: #softmax
-      fc7 = Softmax(embedding, gt_label, name, args, cvd)
-    elif args.loss_type==1: #sphere
+    losses = {'softmax'   : Softmax,
+              'cosface'   : CosFace,
+              'adacos'    : AdaCos,
+              'arcface'   : ArcFace,
+              'circle'    : CircleLoss,
+              'combine'   : CombineFace,
+              'curricular': CurricularLoss
+             }
+
+    if args.loss_type=="sphere": #sphere
       _weight = mx.symbol.L2Normalization(_weight, mode='instance')
       fc7 = mx.sym.LSoftmax(data=embedding, label=gt_label, num_hidden=args.num_classes[i],
                             weight = _weight,
                             beta=args.beta, margin=args.margin, scale=args.scale,
                             beta_min=args.beta_min, verbose=1000, name='fc7_%d' % i)
-    elif args.loss_type==2:
-      fc7 = CosFace(embedding, gt_label, name, args, cvd)
-    elif args.loss_type==4:
-      fc7 = ArcFace(embedding, gt_label, name, args, cvd)
-    elif args.loss_type==5:
-      fc7 = CombineFace(embedding, gt_label, name, args, cvd)
-    elif args.loss_type==6: # linear margin m
-      fc7 = LarcFace(embedding, gt_label, name, args, cvd)
+    elif args.loss_type in losses:
+      fc7 = losses[args.loss_type](embedding, gt_label, name, args, cvd)
+    else:
+      raise ValueError("Loss [%s] is not implemented" % args.loss_type)
 
     if i == 0:
       out_list = [mx.symbol.BlockGrad(embedding)]
@@ -233,10 +199,8 @@ def train_net(args):
         motion_blur          = args.motion_blur,
     )
 
-    if args.loss_type<10:
-      _metric = AccMetric()
-    else:
-      _metric = LossValueMetric()
+    _metric = AccMetric()
+    #_metric = LossValueMetric()
     eval_metrics = [mx.metric.create(_metric)]
 
     if args.network[0]=='r' or args.network[0]=='y':
@@ -246,16 +210,30 @@ def train_net(args):
     else:
       initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
     _rescale = 1.0/args.ctx_num
+
+    if len(args.lr_steps)==0:
+      print('Error: lr_steps is not seted')
+      sys.exit(0)
+    else:
+      lr_steps = [int(x) for x in args.lr_steps.split(',')]
+    print('lr_steps', lr_steps)
+
+    lr_scheduler =  mx.lr_scheduler.MultiFactorScheduler(lr_steps, factor=0.1, base_lr=base_lr)
+    optimizer_params = {'learning_rate':base_lr,
+                        'momentum':base_mom,
+                        'wd':base_wd,
+                        'rescale_grad':_rescale,
+                        'lr_scheduler': lr_scheduler}
+
     #opt = AdaBound()
     #opt = AdaBound(lr=base_lr, wd=base_wd, gamma = 2. / args.max_steps)
     opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
-    som = 200
+
+    som = 2000
     _cb = mx.callback.Speedometer(args.batch_size, som)
 
     ver_list = []
     ver_name_list = []
-    """
-    """
     for name in args.target.split(','):
       path = os.path.join(data_dir,name+".bin")
       if os.path.exists(path):
@@ -263,8 +241,6 @@ def train_net(args):
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
-
-
 
     def ver_test(nbatch):
       results = []
@@ -282,32 +258,17 @@ def train_net(args):
           results.append(acc2)
       return results
 
-
-
     highest_acc = [0.0, 0.0]  #lfw and target
     #for i in range(len(ver_list)):
     #  highest_acc.append(0.0)
     global_step = [0]
     save_step = [0]
-    if len(args.lr_steps)==0:
-      lr_steps = [40000, 60000, 80000]
-      if args.loss_type>=1 and args.loss_type<=7:
-        lr_steps = [100000, 140000, 160000]
-      p = 512.0/args.batch_size
-      for l in range(len(lr_steps)):
-        lr_steps[l] = int(lr_steps[l]*p)
-    else:
-      lr_steps = [int(x) for x in args.lr_steps.split(',')]
-    print('lr_steps', lr_steps)
+
+
     def _batch_callback(param):
       #global global_step
       global_step[0]+=1
       mbatch = global_step[0]
-      for _lr in lr_steps:
-        if mbatch==args.beta_freeze+_lr:
-          opt.lr *= 0.1
-          print('lr change to', opt.lr)
-          break
 
       _cb(param)
       if mbatch%10000==0:
@@ -357,7 +318,7 @@ def train_net(args):
         eval_metric        = eval_metrics,
         kvstore            = 'device',
         optimizer          = opt,
-        #optimizer_params   = optimizer_params,
+        optimizer_params   = optimizer_params,
         initializer        = initializer,
         arg_params         = arg_params,
         aux_params         = aux_params,

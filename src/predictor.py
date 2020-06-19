@@ -127,7 +127,7 @@ def predict(args):
     print('Called with argument:', args)
     mean = None
 
-    dataset = get_data('../datasets/9374.bin', args.batch_size)
+    dataset = get_data('../datasets/9374.bin', args.batch_size, use_bgr=False)
     #dataset = get_data('../datasets/bjz_maskVScard.bin', args.batch_size)
     #dataset = get_data('../datasets/test.bin', args.batch_size)
     model = get_module(args, data_shapes, label_shapes)

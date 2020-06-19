@@ -144,7 +144,7 @@ class ParallModule(BaseModule):
       #  print('g', k, v.shape)
       #for k,v in ag.items():
       #  print('ag', k, v.shape)
-      self._curr_module.set_params(g, x, allow_missing=allow_missing)
+      self._curr_module.set_params(g, x, allow_missing=allow_missing, allow_extra=allow_extra)
       #self._arcface_module.set_params(ag, ax)
       self.params_initialized = True
 
@@ -166,7 +166,7 @@ class ParallModule(BaseModule):
                                         force_init=force_init, allow_extra=allow_extra)
         if arg_params is not None:
           print('Load pretrained model and set _curr_module')
-          self.set_params(arg_params, aux_params, allow_missing=allow_missing)
+          self.set_params(arg_params, aux_params, allow_missing=allow_missing, allow_extra=allow_extra)
           #self._curr_module.set_params(arg_params, aux_params)
         self.params_initialized = True
 
@@ -468,7 +468,7 @@ class ParallModule(BaseModule):
         if monitor is not None:
             self.install_monitor(monitor)
         self.init_params(initializer=initializer, arg_params=arg_params, aux_params=aux_params,
-                         allow_missing=allow_missing, force_init=force_init)
+                         allow_missing=allow_missing, allow_extra=True, force_init=force_init)
         self.init_optimizer(kvstore=kvstore, optimizer=optimizer,
                             optimizer_params=optimizer_params)
 
