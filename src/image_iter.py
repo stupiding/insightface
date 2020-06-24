@@ -137,7 +137,10 @@ class FaceImageIter(io.DataIter):
             idx = self.seq[dataset_idx][self.cur[dataset_idx]]
             self.cur[dataset_idx] += 1
             if self.imgrec[dataset_idx] is not None:
-              s = self.imgrec[dataset_idx].read_idx(idx)
+              try:
+                s = self.imgrec[dataset_idx].read_idx(idx)
+              except:
+                continue
               header, img = recordio.unpack(s)
               label = header.label
               if not isinstance(label, numbers.Number):
