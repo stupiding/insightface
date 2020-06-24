@@ -227,7 +227,7 @@ def train_net(args):
 
     #opt = AdaBound()
     #opt = AdaBound(lr=base_lr, wd=base_wd, gamma = 2. / args.max_steps)
-    opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
+    opt = optimizer.SGD(**optimizer_params)
 
     som = 2000
     _cb = mx.callback.Speedometer(args.batch_size, som)
@@ -272,7 +272,7 @@ def train_net(args):
 
       _cb(param)
       if mbatch%10000==0:
-        print('lr-batch-epoch:',opt.lr,param.nbatch,param.epoch)
+        print('lr-batch-epoch:',opt.learning_rate,param.nbatch,param.epoch)
 
       if mbatch>=0 and mbatch%args.verbose==0:
         acc_list = ver_test(mbatch)
