@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import pdb
 import os, sys
 import math, random
 import logging
@@ -21,7 +22,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'data_loader'))
 
 import face_image
 import verification
-from image_iter import FaceImageIter
+from mask_image_iter import FaceImageIter
 
 from metrics import *
 from networks import *
@@ -38,12 +39,109 @@ logger.setLevel(logging.INFO)
 
 args = None
 
-def get_symbol(network, num_layers, args, arg_params, aux_params):
+class LossValueMetric(mx.metric.EvalMetric):
+  def __init__(self, loss_name, loss_idx):
+    self.loss_idx = loss_idx
+    self.loss_name = loss_name
+    super(LossValueMetric, self).__init__(loss_name)
+    self.losses = []
+
+  def update(self, labels, preds):
+    if 'softmax' in self.loss_name:
+      label_gt = labels[0][:, 0].asnumpy()
+
+      keep_inds = np.where(label_gt != -1)[0]
+      label_gt = label_gt[keep_inds].astype('int32')
+      cls_prob = preds[self.loss_idx].asnumpy()[keep_inds, label_gt]
+      #print(cls_prob, label_gt)
+
+      cls_prob += 1e-14
+      cls_loss = -1 * np.log(cls_prob)
+      cls_loss = np.sum(cls_loss)
+      self.sum_metric += cls_loss
+      self.num_inst += label_gt.shape[0]
+    else:
+      feat_orig = preds[0].asnumpy()
+      feat_mask = preds[1].asnumpy()
+      #print(feat_orig[:, 0], feat_mask[:, 0])
+      dist = np.sum((feat_orig - feat_mask) ** 2, 1) / 2000
+      self.sum_metric += np.sum(dist)
+      self.num_inst += feat_orig.shape[0]
+
+def get_symbol(args, arg_params, aux_params):
   data_shape = (args.image_channel,args.image_h,args.image_w)
   image_shape = ",".join([str(x) for x in data_shape])
   margin_symbols = []
 
-  print('init %s, num_layers: %d' % (network, num_layers))
+  cvd, name = None, 'fc7_%d' % 0
+  classes_each_ctx = args.num_classes[0]
+  if args.parallel:
+    cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip().split(',')
+    classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
+  else:
+    name = 'fc7'
+  args.ctx_num_classes = classes_each_ctx
+
+  bn1_orig = mx.symbol.Variable('bn1_orig')
+  bn1_mask = mx.symbol.Variable('bn1_mask')
+  embedding_orig = mx.symbol.Variable('fc1_orig')
+  embedding_mask = mx.symbol.Variable('fc1_mask')
+
+  all_label = mx.symbol.Variable('softmax_label')
+
+  gt_label = all_label.reshape([-1, ])
+
+  def get_mask(data):
+    global_pool = mx.sym.Pooling(data=data, global_pool=True, kernel=(7, 7), pool_type='avg', name='bn1_global_pooling')
+  
+    mask_fc1 = mx.sym.FullyConnected(data=global_pool, num_hidden=512 // 2, name='mask_fc1')
+    mask_fc1 = mx.sym.BatchNorm(data=mask_fc1, fix_gamma=True, eps=2e-5, momentum=args.bn_mom, name='mask_fc1_bn')
+    mask_fc1 = mx.sym.Activation(data=mask_fc1, act_type='relu', name='mask_fc1_relu')
+  
+    mask_fc2 = mx.sym.FullyConnected(data=mask_fc1, num_hidden=512 // 2, name='mask_fc2')
+    mask_fc2 = mx.sym.BatchNorm(data=mask_fc2, fix_gamma=True, eps=2e-5, momentum=args.bn_mom, name='mask_fc2_bn')
+    mask_fc2 = mx.sym.Activation(data=mask_fc2, act_type='relu', name='mask_fc2_relu')
+  
+    mask_fc3 = mx.sym.FullyConnected(data=mask_fc2, num_hidden=512, name='mask_fc3')
+
+    return mask_fc3
+
+  bn1 = mx.sym.Concat(bn1_orig, bn1_mask, dim=0, name='bn1_concat')
+  embedding = mx.sym.Concat(embedding_orig, embedding_mask, dim=0, name='fc1_concat')
+  labels = mx.sym.Concat(gt_label, gt_label, dim=0, name='label_concat')
+
+  residual = get_mask(bn1)
+  feats = embedding + residual
+
+  feats_orig, feats_mask = mx.sym.split(data=feats, axis=0, num_outputs=2)
+  diff = feats_orig - feats_mask
+  dist = mx.sym.sum(diff * diff, axis=1) / 2000
+  diff_square = mx.sym.mean(dist) 
+  distill_loss = mx.sym.MakeLoss(diff_square)
+
+  if args.loss_type==4:
+    fc7 = ArcFace(feats, labels, name, args, cvd)
+  elif args.loss_type==5:
+    fc7 = CombineFace(feats, labels, name, args, cvd)
+
+  fc7_orig, fc7_mask = mx.sym.split(data=fc7, axis=0, num_outputs=2)
+  
+  softmax_orig = mx.symbol.SoftmaxOutput(data=fc7_orig, label = gt_label, name='softmax_orig', normalization='valid', use_ignore=True)
+  softmax_mask = mx.symbol.SoftmaxOutput(data=fc7_mask, label = gt_label, name='softmax_mask', normalization='valid', use_ignore=True)
+
+  out_list = [mx.symbol.BlockGrad(fc7_orig), mx.sym.BlockGrad(fc7_mask)]
+  out_list += [distill_loss, softmax_orig, softmax_mask]
+
+  out = mx.symbol.Group(out_list)
+
+  return (out, arg_params, aux_params)
+
+def get_module(args, data_shapes):
+  network, num_layers = args.network.split(',')
+  num_layers = int(num_layers)
+  data_shape = (3, 112, 112)
+  image_shape = ",".join([str(x) for x in data_shape])
+
   with mx.AttrScope(ctx_group='dev0'):
     embedding = eval(network).get_symbol(args.emb_size, num_layers, shake_drop=args.shake_drop,
         version_se=args.version_se, version_input=args.version_input, 
@@ -51,54 +149,31 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
         version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn, 
         bn_mom = args.bn_mom)
 
-  if network=='fspherenet':
-    data_shape_dict = {'data' : (args.per_batch_size,)+data_shape}
-    fspherenet.init_weights(sym, data_shape_dict, int(num_layers))
+  #out_list = [mx.symbol.BlockGrad(embedding)]
+  #sym = mx.symbol.Group(out_list)
 
-  all_label = mx.symbol.Variable('softmax_label')
-  if len(args.num_classes) > 1:
-    all_label = mx.symbol.split(data=all_label, axis=1, num_outputs=len(args.num_classes))
+  ctx = [mx.gpu(0)]
+  #all_layers = sym.get_internals()
+  all_layers = embedding.get_internals()
+  out_list = [all_layers[layer] for layer in['bn1_output', 'fc1_output']]
+  sym = mx.symbol.Group(out_list)
+  
+  model = mx.mod.Module(
+      context       = ctx,
+      symbol        = sym,
+      data_names    = ['data'],
+      label_names   = None
+  )
 
-  for i in range(len(args.num_classes)):
-    gt_label = all_label[i].reshape([-1, ])
-    extra_loss = None
+  model.bind(for_training=False, data_shapes=data_shapes)
 
-    cvd, name = None, 'fc7_dt%d' % i
-    classes_each_ctx = args.num_classes[i]
-    print('use Parallel or not: {}'.format(args.parallel))
+  if args.pretrained != '':
+    print(args.pretrained)
+    vec = args.pretrained.split(',')
+    _, arg_params, aux_params = mx.model.load_checkpoint(vec[0], int(vec[1]))
+    model.set_params(arg_params, aux_params, allow_extra=True, allow_missing=True) 
 
-    if args.parallel:
-      name += '_sub%d'
-      cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip().split(',')
-      classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
-    args.ctx_num_classes = classes_each_ctx
-
-    losses = {'softmax'   : Softmax,
-              'cosface'   : CosFace,
-              'adacos'    : AdaCos,
-              'arcface'   : ArcFace,
-              'circle'    : CircleLoss,
-              'combine'   : CombineFace,
-              'curricular': CurricularLoss
-             }
-
-    if args.loss_type=="sphere": #sphere
-      _weight = mx.symbol.L2Normalization(_weight, mode='instance')
-      fc7 = mx.sym.LSoftmax(data=embedding, label=gt_label, num_hidden=args.num_classes[i],
-                            weight = _weight,
-                            beta=args.beta, margin=args.margin, scale=args.scale,
-                            beta_min=args.beta_min, verbose=1000, name='fc7_%d' % i)
-    elif args.loss_type in losses:
-      fc7 = losses[args.loss_type](embedding, gt_label, name, args, cvd)
-    else:
-      raise ValueError("Loss [%s] is not implemented" % args.loss_type)
-
-    if i == 0:
-      out_list = [mx.symbol.BlockGrad(embedding)]
-    softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax_%d' % i, normalization='valid', use_ignore=True)
-    out_list.append(softmax)
-  out = mx.symbol.Group(out_list)
-  return (out, arg_params, aux_params)
+  return model
 
 def train_net(args):
     ctx = []
@@ -130,16 +205,12 @@ def train_net(args):
     path_imgrecs = []
     path_imglist = None
     args.num_classes = []
-    for data_idx, data_dir in enumerate(data_dir_list):
+    for data_dir in data_dir_list:
       prop = face_image.load_property(data_dir)
       args.num_classes.append(prop.num_classes)
       image_size = prop.image_size
-      if data_idx == 0:
-        args.image_h = image_size[0]
-        args.image_w = image_size[1]
-      else:
-        args.image_h = min(args.image_h, image_size[0]) 
-        args.image_w = min(args.image_w, image_size[1])
+      args.image_h = image_size[0]
+      args.image_w = image_size[1]
       print('image_size', image_size)
       assert(args.num_classes[-1]>0)
       print('num_classes', args.num_classes)
@@ -163,9 +234,8 @@ def train_net(args):
       sym, arg_params, aux_params = get_symbol(network, int(num_layers), args, arg_params, aux_params)
     else:
       vec = args.pretrained.split(',')
-      print('loading', vec)
       _, arg_params, aux_params = mx.model.load_checkpoint(vec[0], int(vec[1]))
-      sym, arg_params, aux_params = get_symbol(network, int(num_layers), args, arg_params, aux_params)
+      sym, arg_params, aux_params = get_symbol(args, arg_params, aux_params)
 
     #label_name = 'softmax_label'
     #label_shape = (args.batch_size,)
@@ -174,13 +244,16 @@ def train_net(args):
     model = mx.mod.Module(
         context       = ctx,
         symbol        = sym,
-        data_names    = ['data'] if args.loss_type != 6 else ['data', 'margin'],
+        data_names    = ['bn1_orig', 'bn1_mask', 'fc1_orig', 'fc1_mask'],
+        label_names   = ['softmax_label'],
         group2ctxs    = ctx_group
     )
     val_dataiter = None
 
-    from config import crop
     from config import cutout
+
+    data_shapes = [('data', (args.batch_size, args.image_channel, image_size[0], image_size[1]))]
+    pretrain_model = get_module(args, data_shapes)
 
     train_dataiter = FaceImageIter(
         batch_size           = args.batch_size,
@@ -190,90 +263,77 @@ def train_net(args):
         rand_mirror          = args.rand_mirror,
         mean                 = mean,
         cutout               = cutout,
-        crop                 = crop, 
         loss_type            = args.loss_type,
         #margin_m             = args.margin_m,
         #margin_policy        = args.margin_policy,
         #max_steps            = args.max_steps,
-        #data_names           = ['data', 'margin'],
+        data_names           = ['bn1', 'fc1'],
         downsample_back      = args.downsample_back,
         motion_blur          = args.motion_blur,
+        mx_model             = pretrain_model,
     )
 
-    _metric = AccMetric()
+    #if args.loss_type<10:
+    #  _metric = AccMetric()
+    #else:
     #_metric = LossValueMetric()
-    eval_metrics = [mx.metric.create(_metric)]
+    eval_metrics = mx.metric.CompositeEvalMetric()
+    for loss_name, loss_idx in zip(['distill_loss', 'softmax_orig', 'softmax_mask'], [2, 3, 4]):
+      eval_metrics.add(LossValueMetric(loss_name, loss_idx))
+    #eval_metrics = None
 
-    if args.network[0]=='r' or args.network[0]=='y':
+    if args.network[1]=='r' or args.network[1]=='y':
       initializer = mx.init.Xavier(rnd_type='gaussian', factor_type="out", magnitude=2) #resnet style
-    elif args.network[0]=='i' or args.network[0]=='x':
-      initializer = mx.init.Xavier(rnd_type='gaussian', factor_type="in", magnitude=2) #inception
-    else:
-      initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
     _rescale = 1.0/args.ctx_num
+    #opt = AdaBound()
+    #opt = AdaBound(lr=base_lr, wd=base_wd, gamma = 2. / args.max_steps)
 
-    if len(args.lr_steps)==0:
-      print('Error: lr_steps is not seted')
-      sys.exit(0)
-    else:
-      lr_steps = [int(x) for x in args.lr_steps.split(',')]
-    print('lr_steps', lr_steps)
-
+    lr_steps = [int(x) for x in args.lr_steps.split(',')]
     lr_scheduler =  mx.lr_scheduler.MultiFactorScheduler(lr_steps, factor=0.1, base_lr=base_lr)
     optimizer_params = {'learning_rate':base_lr,
                         'momentum':base_mom,
                         'wd':base_wd,
-                        'rescale_grad':_rescale,
+                        'rescale_grad':_rescale, 
                         'lr_scheduler': lr_scheduler}
 
-    #opt = AdaBound()
-    #opt = AdaBound(lr=base_lr, wd=base_wd, gamma = 2. / args.max_steps)
-    opt = optimizer.SGD(**optimizer_params)
-
-    som = 2000
+    opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
+    som = 200
     _cb = mx.callback.Speedometer(args.batch_size, som)
 
     ver_list = []
     ver_name_list = []
-    for name in args.target.split(','):
-      path = os.path.join(data_dir,name+".bin")
-      if os.path.exists(path):
-        data_set = verification.load_bin(path, image_size)
-        ver_list.append(data_set)
-        ver_name_list.append(name)
-        print('ver', name)
 
     def ver_test(nbatch):
-      results = []
-      for i in range(len(ver_list)):
-        _, issame_list = ver_list[i]
-        if all(issame_list):
-          fp_rates, fp_dict, thred_dict, recall_dict = verification.test(ver_list[i], model, args.batch_size, label_shape = (args.batch_size, len(path_imgrecs)))
-          for k in fp_rates:
-            print("[%s] TPR at FPR %.2e[%.2e: %.4f]:\t%.5f" %(ver_name_list[i], k, fp_dict[k], thred_dict[k], recall_dict[k]))
-        else:
-          acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, label_shape = (args.batch_size, len(path_imgrecs)))
-          print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
-          #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
-          print('[%s][%d]Accuracy-Flip: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc2, std2))
-          results.append(acc2)
-      return results
+      return [0]
 
     highest_acc = [0.0, 0.0]  #lfw and target
     #for i in range(len(ver_list)):
     #  highest_acc.append(0.0)
     global_step = [0]
     save_step = [0]
-
-
+    if len(args.lr_steps)==0:
+      lr_steps = [40000, 60000, 80000]
+      if args.loss_type>=1 and args.loss_type<=7:
+        lr_steps = [100000, 140000, 160000]
+      p = 512.0/args.batch_size
+      for l in range(len(lr_steps)):
+        lr_steps[l] = int(lr_steps[l]*p)
+    else:
+      lr_steps = [int(x) for x in args.lr_steps.split(',')]
+    print('lr_steps', lr_steps)
     def _batch_callback(param):
       #global global_step
       global_step[0]+=1
       mbatch = global_step[0]
+      #for _lr in lr_steps:
+      #  if mbatch==args.beta_freeze+_lr:
+      #    opt.lr *= 0.1
+      #    print('lr change to', opt.lr)
+      #    break
 
       _cb(param)
       if mbatch%10000==0:
-        print('lr-batch-epoch:',opt.learning_rate,param.nbatch,param.epoch)
+        print('lr-batch-epoch:',opt.lr,param.nbatch,param.epoch)
 
       if mbatch>=0 and mbatch%args.verbose==0:
         acc_list = ver_test(mbatch)
@@ -318,17 +378,17 @@ def train_net(args):
         eval_data          = val_dataiter,
         eval_metric        = eval_metrics,
         kvstore            = 'device',
-        optimizer          = opt,
+        #optimizer          = opt,
         optimizer_params   = optimizer_params,
         initializer        = initializer,
         arg_params         = arg_params,
         aux_params         = aux_params,
         allow_missing      = True,
+        #allow_extra        = True,
         batch_end_callback = _batch_callback,
         epoch_end_callback = epoch_cb )
 
 def main():
-    #time.sleep(3600*6.5)
     global args
     args = parse_args()
     train_net(args)

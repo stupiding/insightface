@@ -3,38 +3,33 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-import sys
-import math
-import random
+import os, sys
+import math, random
 import logging
 import pickle
+import sklearn
 import numpy as np
-from triplet_image_iter import FaceImageIter
+from easydict import EasyDict as edict
+
 import mxnet as mx
 from mxnet import ndarray as nd
-import argparse
 import mxnet.optimizer as optimizer
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
-import face_image
-from noise_sgd import NoiseSGD
 sys.path.append(os.path.join(os.path.dirname(__file__), 'eval'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'symbols'))
-import fresnet
-import finception_resnet_v2
-import fmobilenet 
-import fmobilenetv2
-import fxception
-import fdensenet
-import fdpn
-import fnasnet
-import spherenet
-#import lfw
-import verification
-import sklearn
-sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
-import center_loss
+sys.path.append(os.path.join(os.path.dirname(__file__), 'data_loader'))
 
+import face_image
+import verification
+from triplet_image_iter import FaceImageIter
+
+from metrics import *
+from networks import *
+from symbol_fc7 import *
+
+from utils.adabound import AdaBound
+from utils.parser import parse_args
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -99,45 +94,14 @@ def get_symbol(args, arg_params, aux_params):
   data_shape = (args.image_channel,args.image_h,args.image_w)
   image_shape = ",".join([str(x) for x in data_shape])
   margin_symbols = []
-  if args.network[0]=='d':
-    embedding = fdensenet.get_symbol(args.emb_size, args.num_layers,
-        version_se=args.version_se, version_input=args.version_input, 
-        version_output=args.version_output, version_unit=args.version_unit)
-  elif args.network[0]=='m':
-    print('init mobilenet', args.num_layers)
-    if args.num_layers==1:
-      embedding = fmobilenet.get_symbol(args.emb_size, 
-          version_se=args.version_se, version_input=args.version_input, 
-          version_output=args.version_output, version_unit=args.version_unit)
-    else:
-      embedding = fmobilenetv2.get_symbol(args.emb_size)
-  elif args.network[0]=='i':
-    print('init inception-resnet-v2', args.num_layers)
-    embedding = finception_resnet_v2.get_symbol(args.emb_size,
-        version_se=args.version_se, version_input=args.version_input, 
-        version_output=args.version_output, version_unit=args.version_unit)
-  elif args.network[0]=='x':
-    print('init xception', args.num_layers)
-    embedding = fxception.get_symbol(args.emb_size,
-        version_se=args.version_se, version_input=args.version_input, 
-        version_output=args.version_output, version_unit=args.version_unit)
-  elif args.network[0]=='p':
-    print('init dpn', args.num_layers)
-    embedding = fdpn.get_symbol(args.emb_size, args.num_layers,
-        version_se=args.version_se, version_input=args.version_input, 
-        version_output=args.version_output, version_unit=args.version_unit)
-  elif args.network[0]=='n':
-    print('init nasnet', args.num_layers)
-    embedding = fnasnet.get_symbol(args.emb_size)
-  elif args.network[0]=='s':
-    print('init spherenet', args.num_layers)
-    embedding = spherenet.get_symbol(args.emb_size, args.num_layers)
-  else:
-    print('init resnet', args.num_layers)
-    embedding = fresnet.get_symbol(args.emb_size, args.num_layers, 
+
+  print('init %s, num_layers: %d' % (network, num_layers))
+  with mx.AttrScope(ctx_group='dev0'):
+    embedding = eval(network).get_symbol(args.emb_size, num_layers, shake_drop=args.shake_drop,
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit,
-        version_act=args.version_act)
+        version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn, 
+        bn_mom = args.bn_mom)
 
   gt_label = mx.symbol.Variable('softmax_label')
   nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n')

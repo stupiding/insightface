@@ -25,6 +25,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'eval'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'symbols'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'data_loader'))
 
 import face_image
 from config import config, default, generate_config

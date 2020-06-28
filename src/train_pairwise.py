@@ -1,6 +1,9 @@
+# THIS FILE IS FOR EXPERIMENTS, USE train_softmax.py FOR NORMAL TRAINING.
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+
+import pdb
 
 import os, sys
 import math, random
@@ -21,9 +24,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'data_loader'))
 
 import face_image
 import verification
-from image_iter import FaceImageIter
+from pair_image_iter import FaceImageIter
 
-from metrics import *
 from networks import *
 from symbol_fc7 import *
 
@@ -36,7 +38,24 @@ from utils.parser import parse_args
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
 args = None
+
+
+class LossValueMetric(mx.metric.EvalMetric):
+  def __init__(self):
+    self.axis = 1
+    super(LossValueMetric, self).__init__(
+        'lossvalue', axis=self.axis,
+        output_names=None, label_names=None)
+    self.losses = []
+
+  def update(self, labels, preds):
+    loss = preds[-1].asnumpy()[0]
+    self.sum_metric += loss
+    self.num_inst += 1.0
+    gt_label = preds[-2].asnumpy()
+    #print(gt_label)
 
 def get_symbol(network, num_layers, args, arg_params, aux_params):
   data_shape = (args.image_channel,args.image_h,args.image_w)
@@ -49,56 +68,69 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit,
         version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn, 
-        bn_mom = args.bn_mom)
+        bn_mom = args.bn_mom, use_global_stats=True)
 
   if network=='fspherenet':
     data_shape_dict = {'data' : (args.per_batch_size,)+data_shape}
     fspherenet.init_weights(sym, data_shape_dict, int(num_layers))
 
-  all_label = mx.symbol.Variable('softmax_label')
-  if len(args.num_classes) > 1:
-    all_label = mx.symbol.split(data=all_label, axis=1, num_outputs=len(args.num_classes))
+  gt_label = mx.symbol.Variable('softmax_label')
+  label = mx.sym.slice_axis(gt_label, axis=0, begin=0, end=args.per_batch_size // 2)
+  
+  nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n')
+  nembedding1 = mx.symbol.slice_axis(nembedding, axis=0, begin=0, end=args.per_batch_size//2)
+  nembedding2 = mx.symbol.slice_axis(nembedding, axis=0, begin=args.per_batch_size//2, end=2*args.per_batch_size//2)
 
-  for i in range(len(args.num_classes)):
-    gt_label = all_label[i].reshape([-1, ])
-    extra_loss = None
+  cos_simi = mx.sym.sum(nembedding1 * nembedding2, axis=1, keepdims=1)
+  target = mx.sym.where(label, 0.64 - cos_simi, cos_simi - 0.36)
+  pairwise_loss = mx.symbol.clip(target, 0, 1)
+  pairwise_loss = mx.symbol.mean(pairwise_loss)
+  pairwise_loss = mx.symbol.MakeLoss(pairwise_loss)
 
-    cvd, name = None, 'fc7_dt%d' % i
-    classes_each_ctx = args.num_classes[i]
-    print('use Parallel or not: {}'.format(args.parallel))
-
-    if args.parallel:
-      name += '_sub%d'
-      cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip().split(',')
-      classes_each_ctx = (args.num_classes[i] + len(cvd) - 1) // len(cvd)
-    args.ctx_num_classes = classes_each_ctx
-
-    losses = {'softmax'   : Softmax,
-              'cosface'   : CosFace,
-              'adacos'    : AdaCos,
-              'arcface'   : ArcFace,
-              'circle'    : CircleLoss,
-              'combine'   : CombineFace,
-              'curricular': CurricularLoss
-             }
-
-    if args.loss_type=="sphere": #sphere
-      _weight = mx.symbol.L2Normalization(_weight, mode='instance')
-      fc7 = mx.sym.LSoftmax(data=embedding, label=gt_label, num_hidden=args.num_classes[i],
-                            weight = _weight,
-                            beta=args.beta, margin=args.margin, scale=args.scale,
-                            beta_min=args.beta_min, verbose=1000, name='fc7_%d' % i)
-    elif args.loss_type in losses:
-      fc7 = losses[args.loss_type](embedding, gt_label, name, args, cvd)
-    else:
-      raise ValueError("Loss [%s] is not implemented" % args.loss_type)
-
-    if i == 0:
-      out_list = [mx.symbol.BlockGrad(embedding)]
-    softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax_%d' % i, normalization='valid', use_ignore=True)
-    out_list.append(softmax)
+  out_list = [mx.symbol.BlockGrad(embedding)]
+  out_list.append(mx.sym.BlockGrad(gt_label))
+  out_list.append(mx.sym.BlockGrad(cos_simi))
+  out_list.append(mx.sym.BlockGrad(target))
+  out_list.append(pairwise_loss)
   out = mx.symbol.Group(out_list)
   return (out, arg_params, aux_params)
+
+def get_module(args, data_shapes):
+  network, num_layers = args.network.split(',')
+  num_layers = int(num_layers)
+  data_shape = (3, 112, 112)
+  image_shape = ",".join([str(x) for x in data_shape])
+
+  with mx.AttrScope(ctx_group='dev0'):
+    embedding = eval(network).get_symbol(args.emb_size, num_layers, shake_drop=args.shake_drop,
+        version_se=args.version_se, version_input=args.version_input, 
+        version_output=args.version_output, version_unit=args.version_unit,
+        version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn, 
+        bn_mom = args.bn_mom)
+
+
+  ctx = [mx.gpu(0)]
+  #all_layers = sym.get_internals()
+  all_layers = embedding.get_internals()
+  out_list = [all_layers[layer] for layer in['fc1_output']]
+  sym = mx.symbol.Group(out_list)
+  
+  model = mx.mod.Module(
+      context       = ctx,
+      symbol        = sym,
+      data_names    = ['data'],
+      label_names   = None
+  )
+
+  model.bind(for_training=False, data_shapes=data_shapes)
+
+  if args.pretrained != '':
+    print(args.pretrained)
+    vec = args.pretrained.split(',')
+    _, arg_params, aux_params = mx.model.load_checkpoint(vec[0], int(vec[1]))
+    model.set_params(arg_params, aux_params, allow_extra=True, allow_missing=True) 
+
+  return model
 
 def train_net(args):
     ctx = []
@@ -122,18 +154,13 @@ def train_net(args):
     if args.per_batch_size==0:
       args.per_batch_size = 128
     args.batch_size = args.per_batch_size*args.ctx_num
-    args.rescale_threshold = 0
     args.image_channel = 3
 
-    os.environ['BETA'] = str(args.beta)
     data_dir_list = args.data_dir.split(',')
     path_imgrecs = []
     path_imglist = None
-    args.num_classes = []
     for data_idx, data_dir in enumerate(data_dir_list):
-      prop = face_image.load_property(data_dir)
-      args.num_classes.append(prop.num_classes)
-      image_size = prop.image_size
+      image_size = (112, 112)
       if data_idx == 0:
         args.image_h = image_size[0]
         args.image_w = image_size[1]
@@ -141,15 +168,13 @@ def train_net(args):
         args.image_h = min(args.image_h, image_size[0]) 
         args.image_w = min(args.image_w, image_size[1])
       print('image_size', image_size)
-      assert(args.num_classes[-1]>0)
-      print('num_classes', args.num_classes)
-      path_imgrecs.append(os.path.join(data_dir, "train.rec"))
+      path_imgrecs.append(data_dir)
 
-    if args.loss_type==1 and args.num_classes>20000:
-      args.beta_freeze = 5000
-      args.gamma = 0.06
+    args.use_val = False
+    val_rec = None
 
     print('Called with argument:', args)
+
     data_shape = (args.image_channel,image_size[0],image_size[1])
     mean = None
 
@@ -166,17 +191,21 @@ def train_net(args):
       print('loading', vec)
       _, arg_params, aux_params = mx.model.load_checkpoint(vec[0], int(vec[1]))
       sym, arg_params, aux_params = get_symbol(network, int(num_layers), args, arg_params, aux_params)
+    if args.network[0]=='s':
+      data_shape_dict = {'data' : (args.per_batch_size,)+data_shape}
+      spherenet.init_weights(sym, data_shape_dict, args.num_layers)
 
-    #label_name = 'softmax_label'
-    #label_shape = (args.batch_size,)
-    ctx_group = dict(zip(['dev%d' % (i+1) for i in range(len(ctx))], ctx))
-    ctx_group['dev0'] = ctx
+    data_extra = None
+    hard_mining = False
     model = mx.mod.Module(
         context       = ctx,
         symbol        = sym,
-        data_names    = ['data'] if args.loss_type != 6 else ['data', 'margin'],
-        group2ctxs    = ctx_group
+        #data_names = ('data',),
+        #label_names = None,
+        #label_names = ('softmax_label',),
     )
+    label_shape = (args.batch_size,)
+
     val_dataiter = None
 
     from config import crop
@@ -189,59 +218,41 @@ def train_net(args):
         shuffle              = True,
         rand_mirror          = args.rand_mirror,
         mean                 = mean,
-        cutout               = cutout,
+        cutout               = None, #cutout,
         crop                 = crop, 
-        loss_type            = args.loss_type,
-        #margin_m             = args.margin_m,
-        #margin_policy        = args.margin_policy,
-        #max_steps            = args.max_steps,
-        #data_names           = ['data', 'margin'],
         downsample_back      = args.downsample_back,
         motion_blur          = args.motion_blur,
+        mx_model             = model,
+        ctx_num              = args.ctx_num,
     )
 
-    _metric = AccMetric()
-    #_metric = LossValueMetric()
+    _metric = LossValueMetric()
     eval_metrics = [mx.metric.create(_metric)]
 
-    if args.network[0]=='r' or args.network[0]=='y':
+    if args.network[0]=='r':
       initializer = mx.init.Xavier(rnd_type='gaussian', factor_type="out", magnitude=2) #resnet style
     elif args.network[0]=='i' or args.network[0]=='x':
       initializer = mx.init.Xavier(rnd_type='gaussian', factor_type="in", magnitude=2) #inception
     else:
       initializer = mx.init.Xavier(rnd_type='uniform', factor_type="in", magnitude=2)
     _rescale = 1.0/args.ctx_num
-
-    if len(args.lr_steps)==0:
-      print('Error: lr_steps is not seted')
-      sys.exit(0)
-    else:
-      lr_steps = [int(x) for x in args.lr_steps.split(',')]
-    print('lr_steps', lr_steps)
-
-    lr_scheduler =  mx.lr_scheduler.MultiFactorScheduler(lr_steps, factor=0.1, base_lr=base_lr)
-    optimizer_params = {'learning_rate':base_lr,
-                        'momentum':base_mom,
-                        'wd':base_wd,
-                        'rescale_grad':_rescale,
-                        'lr_scheduler': lr_scheduler}
-
-    #opt = AdaBound()
-    #opt = AdaBound(lr=base_lr, wd=base_wd, gamma = 2. / args.max_steps)
-    opt = optimizer.SGD(**optimizer_params)
-
-    som = 2000
+    opt = optimizer.SGD(learning_rate=base_lr, momentum=base_mom, wd=base_wd, rescale_grad=_rescale)
+    som = 200
     _cb = mx.callback.Speedometer(args.batch_size, som)
 
     ver_list = []
     ver_name_list = []
+    """
     for name in args.target.split(','):
-      path = os.path.join(data_dir,name+".bin")
+      path = os.path.join(os.path.dirname(data_dir),name+".bin")
       if os.path.exists(path):
         data_set = verification.load_bin(path, image_size)
         ver_list.append(data_set)
         ver_name_list.append(name)
         print('ver', name)
+    """
+
+
 
     def ver_test(nbatch):
       results = []
@@ -264,16 +275,29 @@ def train_net(args):
     #  highest_acc.append(0.0)
     global_step = [0]
     save_step = [0]
-
-
+    if len(args.lr_steps)==0:
+      lr_steps = [40000, 60000, 80000]
+      if args.loss_type>=1 and args.loss_type<=7:
+        lr_steps = [100000, 140000, 160000]
+      p = 512.0/args.batch_size
+      for l in range(len(lr_steps)):
+        lr_steps[l] = int(lr_steps[l]*p)
+    else:
+      lr_steps = [int(x) for x in args.lr_steps.split(',')]
+    print('lr_steps', lr_steps)
     def _batch_callback(param):
       #global global_step
       global_step[0]+=1
       mbatch = global_step[0]
+      for _lr in lr_steps:
+        if mbatch==_lr:
+          opt.lr *= 0.1
+          print('lr change to', opt.lr)
+          break
 
       _cb(param)
-      if mbatch%10000==0:
-        print('lr-batch-epoch:',opt.learning_rate,param.nbatch,param.epoch)
+      if mbatch%1000==0:
+        print('lr-batch-epoch:',opt.lr,param.nbatch,param.epoch)
 
       if mbatch>=0 and mbatch%args.verbose==0:
         acc_list = ver_test(mbatch)
@@ -294,23 +318,26 @@ def train_net(args):
           do_save = False
         elif args.ckpt>1:
           do_save = True
+        #for i in range(len(acc_list)):
+        #  acc = acc_list[i]
+        #  if acc>=highest_acc[i]:
+        #    highest_acc[i] = acc
+        #    if lfw_score>=0.99:
+        #      do_save = True
+        #if args.loss_type==1 and mbatch>lr_steps[-1] and mbatch%10000==0:
+        #  do_save = True
         if do_save:
           print('saving', msave)
+          if val_dataiter is not None:
+            val_test()
           arg, aux = model.get_params()
           mx.model.save_checkpoint(prefix, msave, model.symbol, arg, aux)
         print('[%d]Accuracy-Highest: %1.5f'%(mbatch, highest_acc[-1]))
-      if mbatch<=args.beta_freeze:
-        _beta = args.beta
-      else:
-        move = max(0, mbatch-args.beta_freeze)
-        _beta = max(args.beta_min, args.beta*math.pow(1+args.gamma*move, -1.0*args.power))
-      #print('beta', _beta)
-      os.environ['BETA'] = str(_beta)
       if args.max_steps>0 and mbatch>args.max_steps:
         sys.exit(0)
 
+    #epoch_cb = mx.callback.do_checkpoint(prefix, 1)
     epoch_cb = None
-    train_dataiter = mx.io.PrefetchingIter(train_dataiter)
 
     model.fit(train_dataiter,
         begin_epoch        = begin_epoch,
@@ -319,7 +346,7 @@ def train_net(args):
         eval_metric        = eval_metrics,
         kvstore            = 'device',
         optimizer          = opt,
-        optimizer_params   = optimizer_params,
+        #optimizer_params   = optimizer_params,
         initializer        = initializer,
         arg_params         = arg_params,
         aux_params         = aux_params,

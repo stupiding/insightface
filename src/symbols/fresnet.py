@@ -73,12 +73,12 @@ def bn_block(data, fix_gamma, eps=2e-5, momentum=0.9, name='bn', method='bn', us
         out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_rbn')
     return out
 
-def ibn_block(data, name, eps=2e-5, bn_mom=0.9):
+def ibn_block(data, name, eps=2e-5, bn_mom=0.9, use_global_stats=False):
     split = mx.symbol.split(data=data, axis=1, num_outputs=2)
     # import pdb
     # pdb.set_trace()
-    out1 = mx.symbol.InstanceNorm(data=split[0], eps=eps, name=name + '_in1')
-    out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1')
+    out1 = mx.symbol.InstanceNorm(data=split[0], eps=eps, name=name + '_in1', use_global_stats=use_global_stats)
+    out2 = mx.sym.BatchNorm(data=split[1],fix_gamma=False, eps=eps, momentum=bn_mom, name=name + '_bn1', use_global_stats=use_global_stats)
     out = mx.symbol.Concat(out1, out2, dim=1, name=name + '_ibn1')
     return out
 
@@ -117,6 +117,7 @@ def block_head(shortcut, trunk, dim_match, num_filter, stride, name, resnet_v2, 
     workspace = kwargs.get('workspace', 256)
     act_type = kwargs.get('version_act', 'prelu')
     shake_drop = kwargs.get('shake_drop', False)
+    use_global_stats = kwargs.get('use_global_stats', False)
 
     # sequeze excitation
     if use_se:
@@ -139,7 +140,7 @@ def block_head(shortcut, trunk, dim_match, num_filter, stride, name, resnet_v2, 
         else:
             conv1sc = Conv(data=shortcut, num_filter=num_filter, kernel=(1,1), stride=stride, no_bias=True,
                                             workspace=workspace, name=name+'_conv1sc')
-            shortcut = mx.sym.BatchNorm(data=conv1sc, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_sc')
+            shortcut = mx.sym.BatchNorm(data=conv1sc, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_sc', use_global_stats=use_global_stats)
     if memonger:
         shortcut._set_attr(mirror_stage='True')
 
@@ -170,19 +171,20 @@ def residual_unit_v1(data, num_filter, stride, dim_match, name, bottle_neck, **k
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
     version_bn = kwargs.get('version_bn', 'bn')
+    use_global_stats = kwargs.get('use_global_stats', False)
     #print('in unit1')
     if bottle_neck:
         conv1 = Conv(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=stride, pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
-        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1', use_global_stats=use_global_stats)
         act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
         conv2 = Conv(data=act1, num_filter=int(num_filter*0.25), kernel=(3,3), stride=(1,1), pad=(1,1),
                                    no_bias=True, workspace=workspace, name=name + '_conv2')
-        bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
+        bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', use_global_stats=use_global_stats)
         act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2')
         conv3 = Conv(data=act2, num_filter=num_filter, kernel=(1,1), stride=(1,1), pad=(0,0), no_bias=True,
                                    workspace=workspace, name=name + '_conv3')
-        trunk = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
+        trunk = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3', use_global_stats=use_global_stats)
     else:
         conv1 = Conv(data=data, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
@@ -217,27 +219,28 @@ def residual_unit_v1_L(data, num_filter, stride, dim_match, name, bottle_neck, *
     bn_mom = kwargs.get('bn_mom', 0.9)
     workspace = kwargs.get('workspace', 256)
     act_type = kwargs.get('version_act', 'prelu')
+    use_global_stats = kwargs.get('use_global_stats', False)
     #print('in unit1')
     if bottle_neck:
         conv1 = Conv(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=(1,1), pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
-        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1', use_global_stats=use_global_stats)
         act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
         conv2 = Conv(data=act1, num_filter=int(num_filter*0.25), kernel=(3,3), stride=(1,1), pad=(1,1),
                                    no_bias=True, workspace=workspace, name=name + '_conv2')
-        bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
+        bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', use_global_stats=use_global_stats)
         act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2')
         conv3 = Conv(data=act2, num_filter=num_filter, kernel=(1,1), stride=stride, pad=(0,0), no_bias=True,
                                    workspace=workspace, name=name + '_conv3')
-        trunk = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
+        trunk = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3', use_global_stats=use_global_stats)
     else:
         conv1 = Conv(data=data, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
-        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
+        bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1', use_global_stats=use_global_stats)
         act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
-        trunk = mx.sym.BatchNorm(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
+        trunk = mx.sym.BatchNorm(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2', use_global_stats=use_global_stats)
 
     merged = block_head(data, trunk, dim_match, num_filter, stride, name, False, **kwargs)
     return Act(data=merged, act_type=act_type, name=name + '_relu3')
@@ -265,26 +268,27 @@ def residual_unit_v2(data, num_filter, stride, dim_match, name, bottle_neck, **k
     workspace = kwargs.get('workspace', 256)
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
+    use_global_stats = kwargs.get('use_global_stats', False)
     #print('in unit2')
 
-    bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
+    bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1', use_global_stats=use_global_stats)
     act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
     if bottle_neck:
         # the same as https://github.com/facebook/fb.resnet.torch#notes, a bit difference with origin paper
         conv1 = Conv(data=act1, num_filter=int(num_filter*0.25), kernel=(1,1), stride=(1,1), pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
-        bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
+        bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', use_global_stats=use_global_stats)
         act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2')
         conv2 = Conv(data=act2, num_filter=int(num_filter*0.25), kernel=(3,3), stride=stride, pad=(1,1),
                                    no_bias=True, workspace=workspace, name=name + '_conv2')
-        bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
+        bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3', use_global_stats=use_global_stats)
         act3 = Act(data=bn3, act_type=act_type, name=name + '_relu3')
         trunk = Conv(data=act3, num_filter=num_filter, kernel=(1,1), stride=(1,1), pad=(0,0), no_bias=True,
                                    workspace=workspace, name=name + '_conv3')
     else:
         conv1 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
-        bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
+        bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2', use_global_stats=use_global_stats)
         act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2')
         trunk = Conv(data=act2, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
@@ -382,20 +386,21 @@ def residual_unit_v3_x(data, num_filter, stride, dim_match, name, bottle_neck, *
     workspace = kwargs.get('workspace', 256)
     memonger = kwargs.get('memonger', False)
     act_type = kwargs.get('version_act', 'prelu')
+    use_global_stats = kwargs.get('use_global_stats', False)
     num_group = 32
     #print('in unit3')
-    bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
+    bn1 = mx.sym.BatchNorm(data=data, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1', use_global_stats=use_global_stats)
     conv1 = Conv(data=bn1, num_group=num_group, num_filter=int(num_filter*0.5), kernel=(1,1), stride=(1,1), pad=(0,0),
                                no_bias=True, workspace=workspace, name=name + '_conv1')
-    bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
+    bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', use_global_stats=use_global_stats)
     act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1')
     conv2 = Conv(data=act1, num_group=num_group, num_filter=int(num_filter*0.5), kernel=(3,3), stride=(1,1), pad=(1,1),
                                no_bias=True, workspace=workspace, name=name + '_conv2')
-    bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
+    bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3', use_global_stats=use_global_stats)
     act2 = Act(data=bn3, act_type=act_type, name=name + '_relu2')
     conv3 = Conv(data=act2, num_filter=num_filter, kernel=(1,1), stride=stride, pad=(0,0), no_bias=True,
                                workspace=workspace, name=name + '_conv3')
-    bn4 = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn4')
+    bn4 = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn4', use_global_stats=use_global_stats)
 
     merged = block_head(data, bn4, dim_match, num_filter, stride, name, False, **kwargs)
     return merged
