@@ -13,6 +13,7 @@ import datetime
 import numpy as np
 import cv2
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '../common'))
 import face_preprocess
 import multiprocessing

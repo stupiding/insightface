@@ -21,6 +21,7 @@ from mxnet import ndarray as nd
 #from ._ndarray_internal import _cvcopyMakeBorder as copyMakeBorder
 from mxnet import io
 from mxnet import recordio
+sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '../common'))
 import face_preprocess
 

@@ -49,7 +49,7 @@ def get_symbol(network, num_layers, args, arg_params, aux_params):
         version_se=args.version_se, version_input=args.version_input, 
         version_output=args.version_output, version_unit=args.version_unit,
         version_act=args.version_act, width_mult = args.width_mult, version_bn=args.version_bn, 
-        bn_mom = args.bn_mom)
+        bn_mom = args.bn_mom, avg_down=args.avg_down)
 
   if network=='fspherenet':
     data_shape_dict = {'data' : (args.per_batch_size,)+data_shape}

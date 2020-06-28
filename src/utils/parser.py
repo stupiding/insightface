@@ -14,6 +14,7 @@ def parse_args():
   parser.add_argument('--network', default='fresnet,100', help='specify network')
   parser.add_argument('--width-mult', type=float, default=1, help="width-mult")
   parser.add_argument("--shake-drop", default=False, action="store_true" , help="whether use ShakeDrop")
+  parser.add_argument("--avg-down", default=False, action="store_true" , help="whether use avg downsample")
   parser.add_argument('--version-se', type=int, default=0, help='whether to use se in network')
   parser.add_argument('--version-ibn', type=int, default=0, help='whether to use IBN in resnet')
   parser.add_argument('--version-input', type=int, default=1, help='network input config')
