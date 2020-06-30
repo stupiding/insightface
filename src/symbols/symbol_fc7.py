@@ -44,6 +44,16 @@ def Softmax(embedding, gt_label, name, args, cvd=None):
     fc7 = mx.sym.concat(*fc7_subs, dim=1, name=name + '_concat')
     return fc7
 
+def Sphere(embedding, gt_label, name, args, cvd=None):
+  _weight = mx.symbol.Variable(name + "_weight", shape=(args.ctx_num_classes, args.emb_size), 
+      lr_mult=args.fc7_lr_mult, wd_mult=args.fc7_wd_mult, init=mx.init.Normal(0.01))
+  _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+  fc7 = mx.sym.LSoftmax(data=embedding, label=gt_label, num_hidden=args.ctx_num_classes,
+                        weight = _weight,
+                        beta=args.beta, margin=args.margin, scale=args.scale,
+                        beta_min=args.beta_min, verbose=1000, name=name)
+  return fc7
+
 def CosFace(embedding, gt_label, name, args, cvd=None):
   s = args.margin_s
   m = args.margin_m

@@ -4,29 +4,31 @@ from __future__ import print_function
 
 import pdb
 
-import os
-import sys
-import math
-import random
+import os, sys
 import logging
 import pickle
+import sklearn
 import numpy as np
-from image_iter import FaceImageIter
-from image_iter import FaceImageIterList
+import math, random
+
 import mxnet as mx
 from mxnet import ndarray as nd
-import argparse
 import mxnet.optimizer as optimizer
+
 sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
-import face_image
 sys.path.append(os.path.join(os.path.dirname(__file__), 'eval'))
 sys.path.append(os.path.join(os.path.dirname(__file__), 'symbols'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'data_loader'))
+
+import argparse
+import face_image
+from image_iter import FaceImageIter
 from utils.adabound import AdaBound
 from utils.parser import parse_args
+
 from networks import *
 from symbol_fc7 import *
 import verification
-import sklearn
 #sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
 #import center_loss
 
