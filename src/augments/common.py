@@ -1,11 +1,14 @@
 import cv2, random
 import numpy as np
 import mxnet as mx
+
 from .gridmask import GridMask
+from .randaugmentation import RandAugment
 
 class common_aug():
   def __init__(self, rand_mirror = False, cutout = None, crop = None,
-                  mask = None, gridmask = None, downsample_back = 0.0, motion_blur = 0.0, mean = None):
+                  mask = None, gridmask = None, downsample_back = 0.0, motion_blur = 0.0,
+                  randaug = False, mean = None):
     if motion_blur > 0:
       load_motion_kernel(self)
 
@@ -22,6 +25,11 @@ class common_aug():
       self.gridmask = None
     self.downsample_back = downsample_back
     self.motion_blur = motion_blur
+
+    if randaug:
+      self.randaug = RandAugment()
+    else:
+      self.randaug = None
 
     self.mean = mean
     self.nd_mean = None
@@ -157,30 +165,33 @@ class common_aug():
 
   def apply(self, _data):
     self.nbatch+=1
-    _data = _data.astype('float32')
-    if self.rand_mirror:
-      _data = self.mirror_aug(_data)
-
-    if self.crop is not None:
-      _data = self.crop_aug(_data)
-
-    if self.cutout is not None:
-      _data = self.cutout_aug(_data)
-
-    if self.gridmask is not None:
-      self.gridmask.set_prob(self.nbatch, 70000)
-      _data = self.gridmask.process(_data)
-
-    if self.mask is not None:
-      _data = self.mask_aug(_data)
-
-    if self.motion_blur > 0 or self.downsample_back > 0:
-      data = _data.asnumpy()
-      if self.motion_blur > 0:
-        data = self.motion_aug(data)
-      if self.downsample_back > 0:
-        data = self.downsample_aug(data)
-      _data = mx.nd.array(data)
+    if self.randaug is not None:
+      _data = self.randaug(_data)
+    else:
+      _data = _data.astype('float32')
+      if self.rand_mirror:
+        _data = self.mirror_aug(_data)
+  
+      if self.crop is not None:
+        _data = self.crop_aug(_data)
+  
+      if self.cutout is not None:
+        _data = self.cutout_aug(_data)
+  
+      if self.gridmask is not None:
+        self.gridmask.set_prob(self.nbatch, 70000)
+        _data = self.gridmask.process(_data)
+  
+      if self.mask is not None:
+        _data = self.mask_aug(_data)
+  
+      if self.motion_blur > 0 or self.downsample_back > 0:
+        data = _data.asnumpy()
+        if self.motion_blur > 0:
+          data = self.motion_aug(data)
+        if self.downsample_back > 0:
+          data = self.downsample_aug(data)
+        _data = mx.nd.array(data)
 
     if self.nd_mean is not None:
       _data -= self.nd_mean
