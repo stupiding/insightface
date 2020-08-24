@@ -90,8 +90,14 @@ def Conv(**kwargs):
     body = mx.sym.Convolution(**kwargs)
     return body
 
-def Act(data, act_type, name):
-    if act_type=='prelu':
+def Act(data, act_type, name, num_filter=0, workspace=0):
+    if act_type=='frelu' and num_filter>0:
+      conv_frelu = mx.sym.Convolution(data=data, num_filter=num_filter, num_group=num_filter, 
+                              kernel=(3,3), stride=(1,1), pad=(1,1),
+                              name=name+"_frelu_conv", workspace=workspace)
+      bn_frelu   = mx.sym.BatchNorm(data)
+      body = mx.sym.maximum(conv_frelu, bn_frelu)
+    elif act_type=='prelu':
       body = mx.sym.LeakyReLU(data = data, act_type='prelu', name = name)
     else:
       body = mx.symbol.Activation(data=data, act_type=act_type, name=name)
@@ -102,7 +108,7 @@ def se_block(data, num_filter, act_type, name, workspace):
     body = mx.sym.Pooling(data=data, global_pool=True, kernel=(7, 7), pool_type='avg', name=name+'_se_pool1')
     body = Conv(data=body, num_filter=num_filter//16, kernel=(1,1), stride=(1,1), pad=(0,0),
                               name=name+"_se_conv1", workspace=workspace)
-    body = Act(data=body, act_type=act_type, name=name+'_se_relu1')
+    body = Act(data=body, act_type=act_type, name=name+'_se_relu1', num_filter=num_filter//16, workspace=workspace)
     body = Conv(data=body, num_filter=num_filter, kernel=(1,1), stride=(1,1), pad=(0,0),
                               name=name+"_se_conv2", workspace=workspace)
     body = mx.symbol.Activation(data=body, act_type='sigmoid', name=name+"_se_sigmoid")
@@ -181,11 +187,11 @@ def residual_unit_v1(data, num_filter, stride, dim_match, name, bottle_neck, **k
         conv1 = Conv(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=stride, pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
         bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
-        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
+        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1', num_filter=int(num_filter*0.25), workspace=workspace)
         conv2 = Conv(data=act1, num_filter=int(num_filter*0.25), kernel=(3,3), stride=(1,1), pad=(1,1),
                                    no_bias=True, workspace=workspace, name=name + '_conv2')
         bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
-        act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2')
+        act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2', num_filter=int(num_filter*0.25), workspace=workspace)
         conv3 = Conv(data=act2, num_filter=num_filter, kernel=(1,1), stride=(1,1), pad=(0,0), no_bias=True,
                                    workspace=workspace, name=name + '_conv3')
         trunk = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
@@ -193,13 +199,13 @@ def residual_unit_v1(data, num_filter, stride, dim_match, name, bottle_neck, **k
         conv1 = Conv(data=data, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
         bn1 = bn_block(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1', method=version_bn)
-        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
+        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1', num_filter=num_filter, workspace=workspace)
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
         trunk = bn_block(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2', method=version_bn)
 
     merged = block_head(data, trunk, dim_match, num_filter, stride, name, False, **kwargs)
-    return Act(data=merged, act_type=act_type, name=name + '_relu3')
+    return Act(data=merged, act_type=act_type, name=name + '_relu3', num_filter=num_filter, workspace=workspace)
 
 def residual_unit_v1_L(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs):
     """Return ResNet Unit symbol for building ResNet
@@ -228,11 +234,11 @@ def residual_unit_v1_L(data, num_filter, stride, dim_match, name, bottle_neck, *
         conv1 = Conv(data=data, num_filter=int(num_filter*0.25), kernel=(1,1), stride=(1,1), pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
         bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn1')
-        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
+        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1', num_filter=int(num_filter*0.25), workspace=workspace)
         conv2 = Conv(data=act1, num_filter=int(num_filter*0.25), kernel=(3,3), stride=(1,1), pad=(1,1),
                                    no_bias=True, workspace=workspace, name=name + '_conv2')
         bn2 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
-        act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2')
+        act2 = Act(data=bn2, act_type=act_type, name=name + '_relu2', num_filter=int(num_filter*0.25), workspace=workspace)
         conv3 = Conv(data=act2, num_filter=num_filter, kernel=(1,1), stride=stride, pad=(0,0), no_bias=True,
                                    workspace=workspace, name=name + '_conv3')
         trunk = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
@@ -240,13 +246,13 @@ def residual_unit_v1_L(data, num_filter, stride, dim_match, name, bottle_neck, *
         conv1 = Conv(data=data, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
         bn1 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn1')
-        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1')
+        act1 = Act(data=bn1, act_type=act_type, name=name + '_relu1', num_filter=num_filter, workspace=workspace)
         conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=stride, pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv2')
         trunk = mx.sym.BatchNorm(data=conv2, fix_gamma=False, momentum=bn_mom, eps=2e-5, name=name + '_bn2')
 
     merged = block_head(data, trunk, dim_match, num_filter, stride, name, False, **kwargs)
-    return Act(data=merged, act_type=act_type, name=name + '_relu3')
+    return Act(data=merged, act_type=act_type, name=name + '_relu3', num_filter=num_filter, workspace=workspace)
 
 def residual_unit_v2(data, num_filter, stride, dim_match, name, bottle_neck, **kwargs):
     """Return ResNet Unit symbol for building ResNet
@@ -342,11 +348,11 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
         conv1 = Conv(data=bn1, num_filter=int(num_filter*0.25), kernel=(1,1), stride=(1,1), pad=(0,0),
                                    no_bias=True, workspace=workspace, name=name + '_conv1')
         bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', use_global_stats=use_global_stats)
-        act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1')
+        act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1', num_filter=int(num_filter*0.25), workspace=workspace)
         conv2 = Conv(data=act1, num_filter=int(num_filter*0.25), kernel=(3,3), stride=(1,1), pad=(1,1),
                                    no_bias=True, workspace=workspace, name=name + '_conv2')
         bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3', use_global_stats=use_global_stats)
-        act2 = Act(data=bn3, act_type=act_type, name=name + '_relu2')
+        act2 = Act(data=bn3, act_type=act_type, name=name + '_relu2', num_filter=int(num_filter*0.25), workspace=workspace)
         if avg_down:
             conv3 = Conv(data=act2, num_filter=num_filter, kernel=(1,1), stride=(1,), pad=(0,0), no_bias=True,
                                        workspace=workspace, name=name + '_conv3')
@@ -359,7 +365,7 @@ def residual_unit_v3(data, num_filter, stride, dim_match, name, bottle_neck, **k
         conv1 = Conv(data=bn1, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                       no_bias=True, workspace=workspace, name=name + '_conv1')
         bn2 = bn_block(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2', method=version_bn, use_global_stats=use_global_stats)
-        act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1')
+        act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1', num_filter=num_filter, workspace=workspace)
         if avg_down:
             conv2 = Conv(data=act1, num_filter=num_filter, kernel=(3,3), stride=(1,1), pad=(1,1),
                                           no_bias=True, workspace=workspace, name=name + '_conv2')
@@ -403,11 +409,11 @@ def residual_unit_v3_x(data, num_filter, stride, dim_match, name, bottle_neck, *
     conv1 = Conv(data=bn1, num_group=num_group, num_filter=int(num_filter*0.5), kernel=(1,1), stride=(1,1), pad=(0,0),
                                no_bias=True, workspace=workspace, name=name + '_conv1')
     bn2 = mx.sym.BatchNorm(data=conv1, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn2')
-    act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1')
+    act1 = Act(data=bn2, act_type=act_type, name=name + '_relu1', num_filter=int(num_filter*0.25), workspace=workspace)
     conv2 = Conv(data=act1, num_group=num_group, num_filter=int(num_filter*0.5), kernel=(3,3), stride=(1,1), pad=(1,1),
                                no_bias=True, workspace=workspace, name=name + '_conv2')
     bn3 = mx.sym.BatchNorm(data=conv2, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn3')
-    act2 = Act(data=bn3, act_type=act_type, name=name + '_relu2')
+    act2 = Act(data=bn3, act_type=act_type, name=name + '_relu2', num_filter=int(num_filter*0.25), workspace=workspace)
     conv3 = Conv(data=act2, num_filter=num_filter, kernel=(1,1), stride=stride, pad=(0,0), no_bias=True,
                                workspace=workspace, name=name + '_conv3')
     bn4 = mx.sym.BatchNorm(data=conv3, fix_gamma=False, eps=2e-5, momentum=bn_mom, name=name + '_bn4')
@@ -478,21 +484,21 @@ def resnet(units, num_stages, filter_list, num_classes, bottle_neck, **kwargs):
       body = Conv(data=data, num_filter=filter_list[0], kernel=(7, 7), stride=(2,2), pad=(3, 3),
                                 no_bias=True, name="conv0", workspace=workspace)
       body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0', use_global_stats=use_global_stats)
-      body = Act(data=body, act_type=act_type, name='relu0')
+      body = Act(data=body, act_type='prelu', name='relu0')
       body = mx.sym.Pooling(data=body, kernel=(3, 3), stride=(2,2), pad=(1,1), pool_type='max')
     elif version_input==2:
       data = mx.sym.BatchNorm(data=data, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='bn_data', use_global_stats=use_global_stats)
       body = Conv(data=data, num_filter=filter_list[0], kernel=(3,3), stride=(1,1), pad=(1,1),
                                 no_bias=True, name="conv0", workspace=workspace)
       body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0', use_global_stats=use_global_stats)
-      body = Act(data=body, act_type=act_type, name='relu0')
+      body = Act(data=body, act_type='prelu', name='relu0')
     else:
       data = mx.sym.identity(data=data, name='id')
       data = (data-127.5) * 0.0078125
       body = Conv(data=data, num_filter=filter_list[0], kernel=(3,3), stride=(1,1), pad=(1, 1),
                                 no_bias=True, name="conv0", workspace=workspace)
       body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn0', use_global_stats=use_global_stats)
-      body = Act(data=body, act_type=act_type, name='relu0')
+      body = Act(data=body, act_type='prelu', name='relu0')
 
     #input_size = _update_input_size(input_size, 1)
 
